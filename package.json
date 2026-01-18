@@ -47,7 +47,7 @@
     "classnames": "^2.5.1",
     "cytoscape": "^3.28.1",
     "dayjs": "^1.11.13",
-    "neo4j-driver": "^5.28.1",
+    "neo4j-driver": "^6.0.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "xlsx": "^0.18.5"
