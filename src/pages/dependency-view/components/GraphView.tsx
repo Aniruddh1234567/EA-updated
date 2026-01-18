@@ -10,23 +10,14 @@ import type { LifecycleCoverage } from '@/repository/repositoryMetadata';
 import { isObjectVisibleForLifecycleCoverage } from '@/repository/lifecycleCoveragePolicy';
 import { useIdeSelection } from '@/ide/IdeSelectionContext';
 import { useIdeShell } from '@/components/IdeShellLayout';
+import { ViewLayoutStore } from '@/diagram-studio/view-runtime/ViewLayoutStore';
 
-const layoutStorageKey = (viewId: string) => `ea.view.layout.positions:${viewId}`;
 const GRID_SIZE = 12;
 
 const snapToGrid = (value: number) => Math.round(value / GRID_SIZE) * GRID_SIZE;
 
 const loadLayoutPositions = (viewId: string): Record<string, { x: number; y: number }> => {
-  if (!viewId) return {};
-  try {
-    const raw = localStorage.getItem(layoutStorageKey(viewId));
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    if (parsed && typeof parsed === 'object') return parsed as Record<string, { x: number; y: number }>;
-  } catch {
-    /* ignore */
-  }
-  return {};
+  return ViewLayoutStore.get(viewId);
 };
 
 const persistLayoutPositions = (viewId: string, cy: Core) => {
@@ -36,20 +27,11 @@ const persistLayoutPositions = (viewId: string, cy: Core) => {
     const pos = n.position();
     positions[n.id()] = { x: snapToGrid(pos.x), y: snapToGrid(pos.y) };
   });
-  try {
-    localStorage.setItem(layoutStorageKey(viewId), JSON.stringify(positions));
-  } catch {
-    /* ignore */
-  }
+  ViewLayoutStore.set(viewId, positions);
 };
 
 const clearLayoutPositions = (viewId: string) => {
-  if (!viewId) return;
-  try {
-    localStorage.removeItem(layoutStorageKey(viewId));
-  } catch {
-    /* ignore */
-  }
+  ViewLayoutStore.remove(viewId);
 };
 
 export type EaGraphNode = {
@@ -834,7 +816,7 @@ const GraphView = ({
       <div
         id="graph-container"
         ref={containerRef}
-        style={{ width: '100%', height: '100%', backgroundImage: 'repeating-linear-gradient(0deg, rgba(0,0,0,0.04) 0, rgba(0,0,0,0.04) 1px, transparent 1px, transparent 12px), repeating-linear-gradient(90deg, rgba(0,0,0,0.04) 0, rgba(0,0,0,0.04) 1px, transparent 1px, transparent 12px)' }}
+        style={{ width: '100%', height: '100%', backgroundImage: 'repeating-linear-gradient(0deg, rgba(0,0,0,0.08) 0, rgba(0,0,0,0.08) 1px, transparent 1px, transparent 12px), repeating-linear-gradient(90deg, rgba(0,0,0,0.08) 0, rgba(0,0,0,0.08) 1px, transparent 1px, transparent 12px)' }}
         onDragEnter={preventExternalDrop}
         onDragOver={preventExternalDrop}
         onDrop={preventExternalDrop}

@@ -63,6 +63,11 @@
     component: './views/view',
   },
   {
+    path: '/studio/:workspaceId',
+    component: './studio',
+    layout: false,
+  },
+  {
     path: '/',
     redirect: '/workspace',
   },

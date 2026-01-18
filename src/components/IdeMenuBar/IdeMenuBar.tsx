@@ -1,6 +1,7 @@
 import React from 'react';
+import { v4 as uuid } from 'uuid';
 import { useModel } from '@umijs/max';
-import { Button, Input, List, Menu, Modal, Select, Typography, message, notification } from 'antd';
+import { Button, Checkbox, Input, List, Menu, Modal, Select, Typography, message, notification } from 'antd';
 import * as XLSX from 'xlsx';
 
 import { useEaRepository } from '@/ea/EaRepositoryContext';
@@ -19,11 +20,11 @@ import { getReadOnlyReason, isAnyObjectTypeWritableForScope } from '@/repository
 
 import { buildGovernanceDebt } from '@/ea/governanceValidation';
 import { appendGovernanceLog } from '@/ea/governanceLog';
-import { defaultLifecycleStateForLifecycleCoverage } from '@/repository/lifecycleCoveragePolicy';
 import { useSeedSampleData } from '@/ea/useSeedSampleData';
 import { CUSTOM_CORE_EA_SEED } from '@/repository/customFrameworkConfig';
 import type { FrameworkConfig } from '@/repository/repositoryMetadata';
 import { ViewStore } from '@/diagram-studio/view-runtime/ViewStore';
+import { ViewLayoutStore } from '@/diagram-studio/view-runtime/ViewLayoutStore';
 import { DesignWorkspaceStore } from '@/ea/DesignWorkspaceStore';
 
 import styles from './style.module.less';
@@ -47,8 +48,8 @@ const safeSlug = (value: string) =>
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/(^-|-$)/g, '') || 'export';
 
-const PROJECT_FILE_PATH_KEY = 'ea.project.filePath';
-const PROJECT_FILE_NAME_KEY = 'ea.project.fileName';
+const ACTIVE_REPO_ID_KEY = 'ea.repository.activeId';
+const ACTIVE_REPO_NAME_KEY = 'ea.repository.activeName';
 const PROJECT_DIRTY_KEY = 'ea.project.dirty';
 const PROJECT_STATUS_EVENT = 'ea:projectStatusChanged';
 
@@ -68,13 +69,6 @@ const readLocalStorage = (key: string): string | null => {
     return null;
   }
 };
-
-const getFileNameFromPath = (value: string) => {
-  const parts = value.split(/[/\\]/g);
-  return parts[parts.length - 1] || value;
-};
-
-const viewLayoutStorageKey = (viewId: string) => `ea.view.layout.positions:${viewId}`;
 
 const parseSelectedEntityId = (selectionKey: string | undefined): string | null => {
   if (!selectionKey) return null;
@@ -125,6 +119,7 @@ const IdeMenuBar: React.FC = () => {
   const { openSeedSampleDataModal } = useSeedSampleData();
 
   const hasRepo = Boolean(eaRepository && metadata);
+  const isReadOnlyMode = (metadata?.governanceMode ?? 'Advisory') === 'Advisory';
   const selectedEntityId = hasRepo ? parseSelectedEntityId(selection.keys?.[0]) : null;
   const selectedEntityType =
     hasRepo && selectedEntityId ? ((eaRepository?.objects.get(selectedEntityId)?.type ?? null) as string | null) : null;
@@ -140,14 +135,16 @@ const IdeMenuBar: React.FC = () => {
   const [customSeedModalOpen, setCustomSeedModalOpen] = React.useState(false);
   const lastFrameworkRef = React.useRef<NewRepoDraft['referenceFramework']>('ArchiMate');
 
+  const [openRepoModalOpen, setOpenRepoModalOpen] = React.useState(false);
+  const [openRepoSelection, setOpenRepoSelection] = React.useState<string | null>(null);
+  const [managedRepositories, setManagedRepositories] = React.useState<Array<{ id: string; name: string }>>([]);
+
   const openRepoInputRef = React.useRef<HTMLInputElement | null>(null);
   const importCapabilitiesInputRef = React.useRef<HTMLInputElement | null>(null);
   const importApplicationsInputRef = React.useRef<HTMLInputElement | null>(null);
   const importDependenciesInputRef = React.useRef<HTMLInputElement | null>(null);
   const importTechnologyInputRef = React.useRef<HTMLInputElement | null>(null);
   const importProgrammesInputRef = React.useRef<HTMLInputElement | null>(null);
-
-  const projectFilePathRef = React.useRef<string | null>(null);
 
   const [renameOpen, setRenameOpen] = React.useState(false);
   const [renameValue, setRenameValue] = React.useState('');
@@ -207,13 +204,13 @@ const IdeMenuBar: React.FC = () => {
     setSelection({ kind: 'none', keys: [] });
 
     setNewRepoOpen(false);
-    projectFilePathRef.current = null;
-    updateProjectStatus({ clear: true });
+    const repositoryId = uuid();
+    updateProjectStatus({ repositoryId, repositoryName: repositoryName, dirty: false });
     message.success('Repository created.');
   }, [createNewRepository, newRepoDraft, setSelection, updateProjectStatus]);
 
   const handleOpenRepo = React.useCallback(() => {
-    console.log('[IDE] File > Open EA Repository');
+    console.log('[IDE] File > Import Repository');
     openRepoInputRef.current?.click();
   }, []);
 
@@ -221,50 +218,42 @@ const IdeMenuBar: React.FC = () => {
     (payload: any) => {
       const snapshot = payload?.repository?.snapshot ?? null;
       if (!snapshot || typeof snapshot !== 'object') {
-        return { ok: false, error: 'Invalid project file: missing repository snapshot.' } as const;
+        return { ok: false, error: 'Invalid repository data: missing snapshot.' } as const;
       }
 
       const snapshotText = JSON.stringify(snapshot);
       const loadRes = loadRepositoryFromJsonText(snapshotText);
       if (!loadRes.ok) return loadRes;
 
-      const viewItems = Array.isArray(payload?.views?.items) ? payload.views.items : [];
-      const viewLayouts = payload?.studioState?.viewLayouts ?? {};
+      const snapshotViews = Array.isArray((snapshot as any)?.views) ? (snapshot as any).views : [];
+      const viewItems = snapshotViews.length > 0 ? snapshotViews : Array.isArray(payload?.views?.items) ? payload.views.items : [];
+      const snapshotStudio = (snapshot as any)?.studioState ?? null;
+      const viewLayouts = snapshotStudio?.viewLayouts ?? payload?.studioState?.viewLayouts ?? {};
 
       const existingViews = ViewStore.list();
       for (const v of existingViews) {
-        try {
-          localStorage.removeItem(viewLayoutStorageKey(v.id));
-        } catch {
-          // ignore
-        }
+        ViewLayoutStore.remove(v.id);
       }
 
-      try {
-        localStorage.setItem('ea:diagram-views', JSON.stringify(viewItems));
-      } catch {
-        // Best-effort only.
-      }
+      ViewStore.replaceAll(viewItems);
 
       for (const v of viewItems as Array<{ id?: string }>) {
         const id = String(v?.id ?? '').trim();
         if (!id) continue;
         const layout = viewLayouts?.[id];
-        try {
-          if (layout && typeof layout === 'object') {
-            localStorage.setItem(viewLayoutStorageKey(id), JSON.stringify(layout));
-          } else {
-            localStorage.removeItem(viewLayoutStorageKey(id));
-          }
-        } catch {
-          // ignore
+        if (layout && typeof layout === 'object') {
+          ViewLayoutStore.set(id, layout as Record<string, { x: number; y: number }>);
+        } else {
+          ViewLayoutStore.remove(id);
         }
       }
 
       const repositoryName = snapshot?.metadata?.repositoryName || 'default';
-      const designWorkspaces = Array.isArray(payload?.studioState?.designWorkspaces)
-        ? payload.studioState.designWorkspaces
-        : [];
+      const designWorkspaces = Array.isArray(snapshotStudio?.designWorkspaces)
+        ? snapshotStudio.designWorkspaces
+        : Array.isArray(payload?.studioState?.designWorkspaces)
+          ? payload.studioState.designWorkspaces
+          : [];
       DesignWorkspaceStore.replaceAll(repositoryName, designWorkspaces);
 
       const ideLayout = payload?.studioState?.ideLayout ?? null;
@@ -322,7 +311,7 @@ const IdeMenuBar: React.FC = () => {
     return new Promise<'save' | 'discard' | 'cancel'>((resolve) => {
       const modal = Modal.confirm({
         title: 'Studio workspace has unsaved changes',
-        content: 'Save or discard your workspace before opening another project.',
+        content: 'Save or discard your workspace before opening another repository.',
         okText: 'Save',
         cancelText: 'Cancel',
         onOk: () => resolve('save'),
@@ -347,32 +336,44 @@ const IdeMenuBar: React.FC = () => {
   }, []);
 
   const updateProjectStatus = React.useCallback(
-    (opts: { filePath?: string | null; dirty?: boolean | null; clear?: boolean }) => {
+    (opts: { repositoryId?: string | null; repositoryName?: string | null; dirty?: boolean | null; clear?: boolean }) => {
       if (opts.clear) {
         try {
-          localStorage.removeItem(PROJECT_FILE_PATH_KEY);
-          localStorage.removeItem(PROJECT_FILE_NAME_KEY);
+          localStorage.removeItem(ACTIVE_REPO_ID_KEY);
+          localStorage.removeItem(ACTIVE_REPO_NAME_KEY);
           localStorage.removeItem(PROJECT_DIRTY_KEY);
         } catch {
           // ignore
         }
       } else {
-        if (opts.filePath === null) {
+        if (opts.repositoryId === null) {
           try {
-            localStorage.removeItem(PROJECT_FILE_PATH_KEY);
-            localStorage.removeItem(PROJECT_FILE_NAME_KEY);
+            localStorage.removeItem(ACTIVE_REPO_ID_KEY);
           } catch {
             // ignore
           }
-        } else if (typeof opts.filePath === 'string') {
-          const fileName = getFileNameFromPath(opts.filePath);
+        } else if (typeof opts.repositoryId === 'string') {
           try {
-            localStorage.setItem(PROJECT_FILE_PATH_KEY, opts.filePath);
-            localStorage.setItem(PROJECT_FILE_NAME_KEY, fileName);
+            localStorage.setItem(ACTIVE_REPO_ID_KEY, opts.repositoryId);
           } catch {
             // ignore
           }
         }
+
+        if (opts.repositoryName === null) {
+          try {
+            localStorage.removeItem(ACTIVE_REPO_NAME_KEY);
+          } catch {
+            // ignore
+          }
+        } else if (typeof opts.repositoryName === 'string') {
+          try {
+            localStorage.setItem(ACTIVE_REPO_NAME_KEY, opts.repositoryName);
+          } catch {
+            // ignore
+          }
+        }
+
         if (typeof opts.dirty === 'boolean') {
           try {
             localStorage.setItem(PROJECT_DIRTY_KEY, opts.dirty ? 'true' : 'false');
@@ -406,9 +407,9 @@ const IdeMenuBar: React.FC = () => {
   }, []);
 
   const handleOpenProject = React.useCallback(async () => {
-    console.log('[IDE] File > Open Project');
-    if (!window.eaDesktop?.openProject) {
-      message.info('Open Project is available in the desktop app.');
+    console.log('[IDE] File > Open Repository');
+    if (!window.eaDesktop?.listManagedRepositories || !window.eaDesktop?.loadManagedRepository) {
+      message.info('Open Repository is available in the desktop app.');
       return;
     }
 
@@ -420,22 +421,58 @@ const IdeMenuBar: React.FC = () => {
       }
     }
 
-    const res = await window.eaDesktop.openProject();
+    const res = await window.eaDesktop.listManagedRepositories();
     if (!res.ok) {
-      Modal.error({ title: 'Open Project failed', content: res.error });
-      return;
-    }
-    if (res.canceled) return;
-    if (!res.content) {
-      Modal.error({ title: 'Open Project failed', content: 'Empty project file.' });
+      Modal.error({ title: 'Open Repository failed', content: res.error });
       return;
     }
 
-    try {
-      const payload = JSON.parse(res.content);
+    if (!res.items.length) {
+      message.info('No repositories found.');
+      return;
+    }
+
+    setManagedRepositories(res.items.map((item) => ({ id: item.id, name: item.name })));
+    setOpenRepoSelection(res.items[0]?.id ?? null);
+    setOpenRepoModalOpen(true);
+  }, [confirmStudioExit, requestStudioAction, studioMode]);
+
+  const handleOpenRepoFileSelected: React.ChangeEventHandler<HTMLInputElement> = React.useCallback(
+    async (e) => {
+      const file = e.target.files?.[0];
+      e.target.value = '';
+      if (!file) return;
+
+      console.log('[IDE] Importing repository package', { name: file.name, type: file.type, size: file.size });
+
+      if (!file.name.toLowerCase().endsWith('.eaproj')) {
+        notification.info({
+          message: 'Unsupported repository package',
+          description: 'Please choose an .eaproj repository package.',
+          placement: 'bottomRight',
+        });
+        return;
+      }
+
+      try {
+        const text = await file.text();
+        await importRepositoryPackage(text, file.name);
+      } catch (err) {
+        Modal.error({
+          title: 'Import Repository failed',
+          content: err instanceof Error ? err.message : 'Failed to read repository package.',
+        });
+      }
+    },
+    [importRepositoryPackage],
+  );
+
+  const importRepositoryPackage = React.useCallback(
+    async (rawText: string, sourceName?: string) => {
+      const payload = JSON.parse(rawText);
       const applied = applyProjectPayload(payload);
       if (!applied.ok) {
-        Modal.error({ title: 'Open Project failed', content: applied.error });
+        Modal.error({ title: 'Import Repository failed', content: applied.error });
         return;
       }
 
@@ -444,56 +481,102 @@ const IdeMenuBar: React.FC = () => {
       dispatchIdeCommand({ type: 'studio.exit' });
       setSelection({ kind: 'none', keys: [] });
 
-      projectFilePathRef.current = res.filePath ?? null;
-      updateProjectStatus({ filePath: res.filePath ?? null, dirty: false });
-      message.success('Project opened.');
-    } catch (err) {
-      Modal.error({ title: 'Open Project failed', content: err instanceof Error ? err.message : 'Invalid project file.' });
+      const repositoryName =
+        payload?.meta?.repositoryName ||
+        payload?.repository?.metadata?.repositoryName ||
+        sourceName ||
+        'Imported Repository';
+      const repositoryId = uuid();
+      updateProjectStatus({ repositoryId, repositoryName, dirty: false });
+
+      if (window.eaDesktop?.saveManagedRepository) {
+        const nextPayload = buildProjectPayload();
+        if (nextPayload) {
+          const saveRes = await window.eaDesktop.saveManagedRepository({ payload: nextPayload, repositoryId });
+          if (!saveRes.ok) {
+            message.error(saveRes.error);
+            return;
+          }
+        }
+      }
+
+      message.success('Repository imported.');
+    },
+    [applyProjectPayload, buildProjectPayload, setSelection, updateProjectStatus],
+  );
+
+  React.useEffect(() => {
+    if (!window.eaDesktop?.consumePendingRepositoryImports) return;
+
+    const consumePending = async () => {
+      const res = await window.eaDesktop?.consumePendingRepositoryImports();
+      if (!res || !res.ok) return;
+      for (const item of res.items || []) {
+        try {
+          await importRepositoryPackage(item.content, item.name);
+        } catch {
+          // Best-effort only.
+        }
+      }
+    };
+
+    void consumePending();
+
+    if (window.eaDesktop?.onRepositoryPackageImport) {
+      window.eaDesktop.onRepositoryPackageImport((payload) => {
+        void importRepositoryPackage(payload.content, payload.name);
+      });
     }
-  }, [applyProjectPayload, confirmStudioExit, requestStudioAction, setSelection, studioMode, updateProjectStatus]);
+  }, [importRepositoryPackage]);
 
-  const handleOpenRepoFileSelected: React.ChangeEventHandler<HTMLInputElement> = React.useCallback(
-    async (e) => {
-      const file = e.target.files?.[0];
-      e.target.value = '';
-      if (!file) return;
+  const handleConfirmOpenManagedRepository = React.useCallback(async () => {
+    const target = managedRepositories.find((repo) => repo.id === openRepoSelection);
+    if (!target) {
+      message.info('Select a repository to open.');
+      return;
+    }
 
-      console.log('[IDE] Opening repository from file', { name: file.name, type: file.type, size: file.size });
+    if (!window.eaDesktop?.loadManagedRepository) {
+      message.info('Open Repository is available in the desktop app.');
+      return;
+    }
 
-      if (file.name.toLowerCase().endsWith('.zip')) {
-        notification.info({
-          message: 'ZIP import placeholder',
-          description: 'ZIP repositories are not supported yet. Please use a JSON snapshot for now.',
-          placement: 'bottomRight',
-        });
+    const res = await window.eaDesktop.loadManagedRepository(target.id);
+    if (!res.ok) {
+      Modal.error({ title: 'Open Repository failed', content: res.error });
+      return;
+    }
+    if (!res.content) {
+      Modal.error({ title: 'Open Repository failed', content: 'Empty repository data.' });
+      return;
+    }
+
+    try {
+      const payload = JSON.parse(res.content);
+      const applied = applyProjectPayload(payload);
+      if (!applied.ok) {
+        Modal.error({ title: 'Open Repository failed', content: applied.error });
         return;
       }
 
-      try {
-        const text = await file.text();
-        const res = loadRepositoryFromJsonText(text);
-        if (!res.ok) {
-          Modal.error({ title: 'Open Repository failed', content: res.error });
-          return;
-        }
+      clearAnalysisResults();
+      dispatchIdeCommand({ type: 'workspace.resetTabs' });
+      dispatchIdeCommand({ type: 'studio.exit' });
+      setSelection({ kind: 'none', keys: [] });
 
-        clearAnalysisResults();
-        dispatchIdeCommand({ type: 'workspace.resetTabs' });
-        setSelection({ kind: 'none', keys: [] });
+      const name =
+        payload?.meta?.repositoryName ||
+        payload?.repository?.metadata?.repositoryName ||
+        target.name ||
+        'EA Repository';
 
-        projectFilePathRef.current = null;
-        updateProjectStatus({ clear: true });
-
-        message.success('Repository opened.');
-      } catch (err) {
-        Modal.error({
-          title: 'Open Repository failed',
-          content: err instanceof Error ? err.message : 'Failed to read file.',
-        });
-      }
-    },
-    [loadRepositoryFromJsonText, setSelection, updateProjectStatus],
-  );
+      updateProjectStatus({ repositoryId: res.repositoryId ?? target.id, repositoryName: name, dirty: false });
+      message.success('Repository opened.');
+      setOpenRepoModalOpen(false);
+    } catch (err) {
+      Modal.error({ title: 'Open Repository failed', content: err instanceof Error ? err.message : 'Invalid repository data.' });
+    }
+  }, [applyProjectPayload, managedRepositories, openRepoSelection, setSelection, updateProjectStatus]);
 
   const handleCloseRepository = React.useCallback(() => {
     console.log('[IDE] File > Close Repository');
@@ -508,7 +591,6 @@ const IdeMenuBar: React.FC = () => {
         clearAnalysisResults();
         dispatchIdeCommand({ type: 'workspace.resetTabs' });
         setSelection({ kind: 'none', keys: [] });
-        projectFilePathRef.current = null;
         updateProjectStatus({ clear: true });
         message.success('Repository closed.');
       },
@@ -518,33 +600,8 @@ const IdeMenuBar: React.FC = () => {
   const buildProjectPayload = React.useCallback(() => {
     if (!eaRepository || !metadata) return null;
 
-    const repositorySnapshot = {
-      version: 1 as const,
-      metadata,
-      objects: Array.from(eaRepository.objects.values()).map((o) => ({
-        id: o.id,
-        type: o.type,
-        attributes: { ...(o.attributes ?? {}) },
-      })),
-      relationships: eaRepository.relationships.map((r) => ({
-        fromId: r.fromId,
-        toId: r.toId,
-        type: r.type,
-        attributes: { ...(r.attributes ?? {}) },
-      })),
-      updatedAt: new Date().toISOString(),
-    };
-
     const views = ViewStore.list();
-    const viewLayouts = views.reduce<Record<string, Record<string, { x: number; y: number }>>>(
-      (acc, view) => {
-        const raw = readLocalStorage(viewLayoutStorageKey(view.id));
-        const parsed = safeParseJson<Record<string, { x: number; y: number }>>(raw, {} as Record<string, { x: number; y: number }>);
-        acc[view.id] = parsed;
-        return acc;
-      },
-      {},
-    );
+    const viewLayouts = ViewLayoutStore.listAll();
 
     const repositoryName = metadata.repositoryName || 'default';
     const designWorkspaces = DesignWorkspaceStore.list(repositoryName);
@@ -569,11 +626,34 @@ const IdeMenuBar: React.FC = () => {
       designWorkspaces,
     };
 
+    const repositorySnapshot = {
+      version: 1 as const,
+      metadata,
+      objects: Array.from(eaRepository.objects.values()).map((o) => ({
+        id: o.id,
+        type: o.type,
+        attributes: { ...(o.attributes ?? {}) },
+      })),
+      relationships: eaRepository.relationships.map((r) => ({
+        fromId: r.fromId,
+        toId: r.toId,
+        type: r.type,
+        attributes: { ...(r.attributes ?? {}) },
+      })),
+      views,
+      studioState: {
+        viewLayouts,
+        designWorkspaces,
+      },
+      updatedAt: new Date().toISOString(),
+    };
+
     return {
       version: 1 as const,
       meta: {
         createdAt: metadata.createdAt,
         updatedAt: new Date().toISOString(),
+        repositoryId: readLocalStorage(ACTIVE_REPO_ID_KEY) ?? undefined,
         repositoryName: metadata.repositoryName,
         organizationName: metadata.organizationName,
         referenceFramework: metadata.referenceFramework,
@@ -591,54 +671,22 @@ const IdeMenuBar: React.FC = () => {
     };
   }, [eaRepository, metadata]);
 
-  const handleSaveProject = React.useCallback(async () => {
-    console.log('[IDE] File > Save Project');
-    if (!eaRepository || !metadata) return;
-
-    const payload = buildProjectPayload();
-    if (!payload) return;
-
-    if (!window.eaDesktop?.saveProject) {
-      message.info('Save Project is available in the desktop app.');
-      return;
-    }
-
-    const suggestedName = `ea-project-${safeSlug(metadata.repositoryName)}.eaproj`;
-    const res = await window.eaDesktop.saveProject({
-      payload,
-      filePath: projectFilePathRef.current,
-      suggestedName,
-      saveAs: false,
-    });
-
-    if (!res.ok) {
-      message.error(res.error);
-      return;
-    }
-
-    if (res.canceled) return;
-    if (res.filePath) projectFilePathRef.current = res.filePath;
-    updateProjectStatus({ filePath: res.filePath ?? projectFilePathRef.current, dirty: false });
-    message.success('Project saved.');
-  }, [buildProjectPayload, eaRepository, metadata, updateProjectStatus]);
-
   const handleSaveProjectAs = React.useCallback(async () => {
-    console.log('[IDE] File > Save Project As');
+    console.log('[IDE] File > Export Repository');
     if (!eaRepository || !metadata) return;
 
     const payload = buildProjectPayload();
     if (!payload) return;
 
-    if (!window.eaDesktop?.saveProject) {
-      message.info('Save Project is available in the desktop app.');
+    if (!window.eaDesktop?.exportRepository) {
+      message.info('Export Repository is available in the desktop app.');
       return;
     }
 
     const suggestedName = `ea-project-${safeSlug(metadata.repositoryName)}.eaproj`;
-    const res = await window.eaDesktop.saveProject({
+    const res = await window.eaDesktop.exportRepository({
       payload,
       suggestedName,
-      saveAs: true,
     });
 
     if (!res.ok) {
@@ -647,10 +695,8 @@ const IdeMenuBar: React.FC = () => {
     }
 
     if (res.canceled) return;
-    if (res.filePath) projectFilePathRef.current = res.filePath;
-    updateProjectStatus({ filePath: res.filePath ?? projectFilePathRef.current, dirty: false });
-    message.success('Project saved.');
-  }, [buildProjectPayload, eaRepository, metadata, updateProjectStatus]);
+    message.success('Repository exported.');
+  }, [buildProjectPayload, eaRepository, metadata]);
 
   const importCsv = React.useCallback(
     async (args: {
@@ -747,6 +793,11 @@ const IdeMenuBar: React.FC = () => {
     if (!eaRepository || !metadata) return;
 
     const doExport = () => {
+      const views = ViewStore.list();
+      const viewLayouts = ViewLayoutStore.listAll();
+      const repositoryName = metadata.repositoryName || 'default';
+      const designWorkspaces = DesignWorkspaceStore.list(repositoryName);
+
       const snapshot = {
         version: 1 as const,
         metadata,
@@ -761,6 +812,11 @@ const IdeMenuBar: React.FC = () => {
           type: r.type,
           attributes: { ...(r.attributes ?? {}) },
         })),
+        views,
+        studioState: {
+          viewLayouts,
+          designWorkspaces,
+        },
         updatedAt: new Date().toISOString(),
       };
 
@@ -965,7 +1021,6 @@ const IdeMenuBar: React.FC = () => {
         clearAnalysisResults();
         dispatchIdeCommand({ type: 'workspace.resetTabs' });
         setSelection({ kind: 'none', keys: [] });
-        projectFilePathRef.current = null;
         updateProjectStatus({ clear: true });
         message.success('Context unloaded.');
       },
@@ -984,6 +1039,10 @@ const IdeMenuBar: React.FC = () => {
 
   const handleRenameSelectedElement = React.useCallback(() => {
     console.log('[IDE] Edit > Rename Selected Element');
+    if (isReadOnlyMode) {
+      message.warning('Read-only mode: rename is disabled.');
+      return;
+    }
     if (!eaRepository || !selectedEntityId) return;
 
     const objType = (eaRepository.objects.get(selectedEntityId)?.type ?? null) as string | null;
@@ -997,9 +1056,14 @@ const IdeMenuBar: React.FC = () => {
     const currentName = typeof obj?.attributes?.name === 'string' ? String(obj?.attributes?.name) : '';
     setRenameValue(currentName || selectedEntityId);
     setRenameOpen(true);
-  }, [eaRepository, metadata?.architectureScope, selectedEntityId]);
+  }, [eaRepository, isReadOnlyMode, metadata?.architectureScope, selectedEntityId]);
 
   const handleConfirmRename = React.useCallback(() => {
+    if (isReadOnlyMode) {
+      message.warning('Read-only mode: rename is disabled.');
+      setRenameOpen(false);
+      return;
+    }
     if (!eaRepository || !selectedEntityId) return;
 
     const objType = (eaRepository.objects.get(selectedEntityId)?.type ?? null) as string | null;
@@ -1034,10 +1098,14 @@ const IdeMenuBar: React.FC = () => {
 
     setRenameOpen(false);
     message.success('Element renamed.');
-  }, [eaRepository, metadata?.architectureScope, renameValue, selectedEntityId, trySetEaRepository]);
+  }, [eaRepository, isReadOnlyMode, metadata?.architectureScope, renameValue, selectedEntityId, trySetEaRepository]);
 
   const handleDeleteSelectedElement = React.useCallback(() => {
     console.log('[IDE] Edit > Delete Selected Element');
+    if (isReadOnlyMode) {
+      message.warning('Read-only mode: delete is disabled.');
+      return;
+    }
     if (!eaRepository || !selectedEntityId) return;
 
     const objType = (eaRepository.objects.get(selectedEntityId)?.type ?? null) as string | null;
@@ -1048,17 +1116,50 @@ const IdeMenuBar: React.FC = () => {
     }
 
     const rels = eaRepository.relationships.filter((r) => r.fromId === selectedEntityId || r.toId === selectedEntityId);
+    const relPreview = rels.slice(0, 10).map((r) => {
+      const source = eaRepository.objects.get(r.fromId);
+      const target = eaRepository.objects.get(r.toId);
+      const sourceName = source && typeof source.attributes?.name === 'string' && source.attributes.name.trim()
+        ? String(source.attributes.name)
+        : r.fromId;
+      const targetName = target && typeof target.attributes?.name === 'string' && target.attributes.name.trim()
+        ? String(target.attributes.name)
+        : r.toId;
+      return `${sourceName} —${r.type}→ ${targetName}`;
+    });
+    let removeRelationships = false;
 
     Modal.confirm({
       title: 'Delete selected element?',
       content: (
-        <div>
+        <div style={{ display: 'grid', gap: 8 }}>
           <div>
             Element: <strong>{selectedEntityId}</strong>
           </div>
-          <div style={{ marginTop: 8 }}>
-            This will remove {rels.length} related relationship(s) to prevent dangling references.
+          <div>
+            <Typography.Text type="secondary">Impacted relationships ({rels.length})</Typography.Text>
+            {rels.length === 0 ? (
+              <Typography.Text type="secondary" style={{ display: 'block' }}>
+                None
+              </Typography.Text>
+            ) : (
+              <ul style={{ margin: '6px 0 0 16px' }}>
+                {relPreview.map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+                {rels.length > relPreview.length ? (
+                  <li>…and {rels.length - relPreview.length} more</li>
+                ) : null}
+              </ul>
+            )}
           </div>
+          <Checkbox
+            onChange={(e) => {
+              removeRelationships = e.target.checked;
+            }}
+          >
+            Also delete impacted relationships
+          </Checkbox>
         </div>
       ),
       okText: 'Delete',
@@ -1067,9 +1168,11 @@ const IdeMenuBar: React.FC = () => {
       onOk: () => {
         const draft = eaRepository.clone();
         draft.objects.delete(selectedEntityId);
-        draft.relationships = draft.relationships.filter((r) => r.fromId !== selectedEntityId && r.toId !== selectedEntityId);
+        if (removeRelationships) {
+          draft.relationships = draft.relationships.filter((r) => r.fromId !== selectedEntityId && r.toId !== selectedEntityId);
+        }
 
-        console.log('[IDE] Deleted element', { id: selectedEntityId, removedRelationships: rels.length });
+        console.log('[IDE] Deleted element', { id: selectedEntityId, removedRelationships: removeRelationships ? rels.length : 0 });
 
         const applied = trySetEaRepository(draft);
         if (!applied.ok) return;
@@ -1078,7 +1181,7 @@ const IdeMenuBar: React.FC = () => {
         message.success('Element deleted.');
       },
     });
-  }, [eaRepository, metadata?.architectureScope, selectedEntityId, setSelection, trySetEaRepository]);
+  }, [eaRepository, isReadOnlyMode, metadata?.architectureScope, selectedEntityId, setSelection, trySetEaRepository]);
 
   const handleFindElement = React.useCallback(() => {
     console.log('[IDE] Edit > Find Element');
@@ -1306,6 +1409,10 @@ const IdeMenuBar: React.FC = () => {
 
   // CSV import bindings (reuse existing parsing logic from dependency-view utilities).
   const parseAndApplyCsv = React.useMemo(() => {
+    const readLifecycleState = (attrs: Record<string, unknown> | null | undefined): string => {
+      const raw = (attrs as any)?.lifecycleState ?? (attrs as any)?.lifecycle_state ?? (attrs as any)?.lifecyclestate;
+      return typeof raw === 'string' ? raw.trim() : '';
+    };
     return {
       capabilities: async (file: File) => {
         return importCsv({
@@ -1313,9 +1420,14 @@ const IdeMenuBar: React.FC = () => {
           file,
           parse: (csvText) => {
             if (!eaRepository) return { ok: false as const, errors: ['No repository loaded.'] };
-            const defaultLifecycleState = defaultLifecycleStateForLifecycleCoverage(metadata?.lifecycleCoverage);
             const result = parseAndValidateCapabilitiesCsv(csvText, { repository: eaRepository });
             if (!result.ok) return result;
+
+            const lifecycleMissing = result.capabilities
+              .map((c: any, idx: number) => ({ idx, state: readLifecycleState(c.attributes) }))
+              .filter((row) => !row.state)
+              .map((row) => `Row ${row.idx + 2}: lifecycleState is required.`);
+            if (lifecycleMissing.length > 0) return { ok: false as const, errors: lifecycleMissing };
 
             const objects = result.capabilities.map((c: any) => ({
               id: c.id,
@@ -1323,7 +1435,6 @@ const IdeMenuBar: React.FC = () => {
               attributes: {
                 name: c.name,
                 category: c.category,
-                lifecycleState: (c.attributes ?? {})?.lifecycleState ?? defaultLifecycleState,
                 ...(c.attributes ?? {}),
               },
             }));
@@ -1349,7 +1460,6 @@ const IdeMenuBar: React.FC = () => {
           file,
           parse: (csvText) => {
             if (!eaRepository) return { ok: false as const, errors: ['No repository loaded.'] };
-            const defaultLifecycleState = defaultLifecycleStateForLifecycleCoverage(metadata?.lifecycleCoverage);
             const result = parseAndValidateApplicationsCsv(csvText);
             if (!result.ok) return result;
 
@@ -1360,6 +1470,11 @@ const IdeMenuBar: React.FC = () => {
 
             const errors: string[] = [];
             for (const row of result.applications as any[]) {
+              const lifecycleState = typeof row.lifecycleState === 'string' ? row.lifecycleState.trim() : '';
+              if (!lifecycleState) {
+                errors.push(`Row ${row._row}: lifecycleState is required.`);
+                continue;
+              }
               const res = draft.addObject({
                 id: row.id,
                 type: 'Application',
@@ -1367,7 +1482,7 @@ const IdeMenuBar: React.FC = () => {
                   name: row.name,
                   criticality: row.criticality,
                   lifecycle: row.lifecycle,
-                  lifecycleState: defaultLifecycleState,
+                  lifecycleState,
                 },
               });
               if (!res.ok) errors.push(res.error);
@@ -1429,16 +1544,20 @@ const IdeMenuBar: React.FC = () => {
           file,
           parse: (csvText) => {
             if (!eaRepository) return { ok: false as const, errors: ['No repository loaded.'] };
-            const defaultLifecycleState = defaultLifecycleStateForLifecycleCoverage(metadata?.lifecycleCoverage);
             const result = parseAndValidateTechnologyCsv(csvText);
             if (!result.ok) return result;
+
+            const lifecycleMissing = (result.technologies as any[])
+              .map((t: any, idx: number) => ({ idx, state: readLifecycleState(t.attributes) }))
+              .filter((row) => !row.state)
+              .map((row) => `Row ${row.idx + 2}: lifecycleState is required.`);
+            if (lifecycleMissing.length > 0) return { ok: false as const, errors: lifecycleMissing };
 
             const objects = (result.technologies as any[]).map((t: any) => ({
               id: t.id,
               type: 'Technology' as const,
               attributes: {
                 name: t.name,
-                lifecycleState: (t.attributes ?? {})?.lifecycleState ?? defaultLifecycleState,
                 ...(t.attributes ?? {}),
               },
             }));
@@ -1460,16 +1579,20 @@ const IdeMenuBar: React.FC = () => {
           file,
           parse: (csvText) => {
             if (!eaRepository) return { ok: false as const, errors: ['No repository loaded.'] };
-            const defaultLifecycleState = defaultLifecycleStateForLifecycleCoverage(metadata?.lifecycleCoverage);
             const result = parseAndValidateProgrammesCsv(csvText);
             if (!result.ok) return result;
+
+            const lifecycleMissing = (result.programmes as any[])
+              .map((p: any, idx: number) => ({ idx, state: readLifecycleState(p.attributes) }))
+              .filter((row) => !row.state)
+              .map((row) => `Row ${row.idx + 2}: lifecycleState is required.`);
+            if (lifecycleMissing.length > 0) return { ok: false as const, errors: lifecycleMissing };
 
             const objects = (result.programmes as any[]).map((p: any) => ({
               id: p.id,
               type: 'Programme' as const,
               attributes: {
                 name: p.name,
-                lifecycleState: (p.attributes ?? {})?.lifecycleState ?? defaultLifecycleState,
                 ...(p.attributes ?? {}),
               },
             }));
@@ -1486,7 +1609,7 @@ const IdeMenuBar: React.FC = () => {
         });
       },
     };
-  }, [eaRepository, importCsv, metadata?.lifecycleCoverage, trySetEaRepository]);
+  }, [eaRepository, importCsv, trySetEaRepository]);
 
   const fileMenuDisabled = false;
   const editMenuDisabled = !hasRepo;
@@ -1500,17 +1623,16 @@ const IdeMenuBar: React.FC = () => {
         children: [
           {
             key: 'file.new',
-            label: <span title="Use the Project Hub to create or open projects.">New EA Repository</span>,
+            label: <span title="Use the Repository Hub to create or open repositories.">New EA Repository</span>,
             onClick: handleNewRepo,
           },
-          { key: 'file.open', label: 'Open EA Repository…', onClick: handleOpenRepo },
+          { key: 'file.open', label: 'Import Repository…', onClick: handleOpenRepo },
           {
             key: 'file.openProject',
-            label: <span title="Use the Project Hub to create or open projects.">Open Project…</span>,
+            label: <span title="Use the Repository Hub to create or open repositories.">Open Repository…</span>,
             onClick: handleOpenProject,
           },
-          { key: 'file.saveProject', label: 'Save Project', disabled: !hasRepo, onClick: handleSaveProject },
-          { key: 'file.saveProjectAs', label: 'Save Project As…', disabled: !hasRepo, onClick: handleSaveProjectAs },
+          { key: 'file.saveProjectAs', label: 'Export Repository…', disabled: !hasRepo, onClick: handleSaveProjectAs },
           { type: 'divider' as const },
           {
             key: 'file.close',
@@ -1569,13 +1691,13 @@ const IdeMenuBar: React.FC = () => {
           {
             key: 'edit.rename',
             label: 'Rename Selected Element…',
-            disabled: !selectedEntityId || !canEditSelectedEntity,
+            disabled: isReadOnlyMode || !selectedEntityId || !canEditSelectedEntity,
             onClick: handleRenameSelectedElement,
           },
           {
             key: 'edit.delete',
             label: 'Delete Selected Element…',
-            disabled: !selectedEntityId || !canEditSelectedEntity,
+            disabled: isReadOnlyMode || !selectedEntityId || !canEditSelectedEntity,
             onClick: handleDeleteSelectedElement,
             danger: true,
           },
@@ -1692,7 +1814,6 @@ const IdeMenuBar: React.FC = () => {
       handleRedo,
       handleRenameSelectedElement,
       handleResetLayout,
-      handleSaveProject,
       handleSaveProjectAs,
       handleToggleAnalysis,
       handleToggleBottomPanel,
@@ -1754,7 +1875,7 @@ const IdeMenuBar: React.FC = () => {
       <input
         ref={openRepoInputRef}
         type="file"
-        accept="application/json,.json,application/zip,.zip"
+        accept="application/octet-stream,.eaproj"
         style={{ display: 'none' }}
         onChange={handleOpenRepoFileSelected}
       />
@@ -1764,6 +1885,26 @@ const IdeMenuBar: React.FC = () => {
       <input ref={importDependenciesInputRef} type="file" accept="text/csv,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.xlsx,.xls" style={{ display: 'none' }} onChange={onCsvSelected(parseAndApplyCsv.dependencies)} />
       <input ref={importTechnologyInputRef} type="file" accept="text/csv,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.xlsx,.xls" style={{ display: 'none' }} onChange={onCsvSelected(parseAndApplyCsv.technology)} />
       <input ref={importProgrammesInputRef} type="file" accept="text/csv,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.xlsx,.xls" style={{ display: 'none' }} onChange={onCsvSelected(parseAndApplyCsv.programmes)} />
+
+      <Modal
+        title="Open Repository"
+        open={openRepoModalOpen}
+        onCancel={() => setOpenRepoModalOpen(false)}
+        onOk={handleConfirmOpenManagedRepository}
+        okText="Open"
+        destroyOnClose
+      >
+        <Typography.Paragraph type="secondary" style={{ marginBottom: 8 }}>
+          Select a managed repository to open.
+        </Typography.Paragraph>
+        <Select
+          style={{ width: '100%' }}
+          placeholder="Select a repository"
+          options={managedRepositories.map((item) => ({ value: item.id, label: item.name }))}
+          value={openRepoSelection ?? undefined}
+          onChange={(value) => setOpenRepoSelection(value)}
+        />
+      </Modal>
 
       {/* New repo modal */}
       <Modal
@@ -1893,6 +2034,7 @@ const IdeMenuBar: React.FC = () => {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <div>New name</div>
           <Input value={renameValue} onChange={(e) => setRenameValue(e.target.value)} autoFocus />
+          <Typography.Text type="secondary">Renaming updates only this element.</Typography.Text>
         </div>
       </Modal>
 

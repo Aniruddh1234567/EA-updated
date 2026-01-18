@@ -1,79 +1,52 @@
 import {
   ApartmentOutlined,
-  AppstoreOutlined,
-  BranchesOutlined,
-  CloudOutlined,
   FileAddOutlined,
   FileTextOutlined,
 } from '@ant-design/icons';
-import { Tree, message } from 'antd';
+import { Tree } from 'antd';
 import type { DataNode } from 'antd/es/tree';
 import React from 'react';
+import { useLocation } from '@umijs/max';
 import { useIdeShell } from './index';
 import styles from './style.module.less';
 import { useIdeSelection } from '@/ide/IdeSelectionContext';
 import { useEaRepository } from '@/ea/EaRepositoryContext';
 
-import type { ViewDefinition, ViewType } from '../../../backend/views/ViewDefinition';
-import { getViewRepository } from '../../../backend/views/ViewRepositoryStore';
-
-const VIEW_TYPE_LABELS: Record<ViewType, string> = {
-  ApplicationDependency: 'Application Dependency',
-  ApplicationLandscape: 'Application Landscape',
-  CapabilityMap: 'Capability Map',
-  TechnologyLandscape: 'Technology Landscape',
-  ImpactView: 'Impact View',
-};
-
-const iconForViewType = (type: ViewType) => {
-  switch (type) {
-    case 'ApplicationDependency':
-    case 'ApplicationLandscape':
-      return <AppstoreOutlined />;
-    case 'CapabilityMap':
-      return <BranchesOutlined />;
-    case 'TechnologyLandscape':
-      return <CloudOutlined />;
-    case 'ImpactView':
-      return <ApartmentOutlined />;
-    default:
-      return <FileTextOutlined />;
-  }
-};
+import { ViewStore } from '@/diagram-studio/view-runtime/ViewStore';
+import { ViewpointRegistry } from '@/diagram-studio/viewpoints/ViewpointRegistry';
+import type { ViewInstance } from '@/diagram-studio/viewpoints/ViewInstance';
 
 const buildTree = (
-  views: ViewDefinition[],
-  architectureScope: string | null | undefined,
+  views: ViewInstance[],
   opts?: { showCreate?: boolean },
 ): DataNode[] => {
-  const filtered =
-    architectureScope === 'Programme' ? views.filter((v) => v.viewType === 'ImpactView') : views;
+  const sorted = [...views].sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
 
-  const byType = new Map<ViewType, ViewDefinition[]>();
-
-  for (const v of filtered) {
-    const list = byType.get(v.viewType);
-    if (list) list.push(v);
-    else byType.set(v.viewType, [v]);
-  }
-
-  const typeNodes: DataNode[] = Array.from(byType.entries())
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([viewType, list]) => {
-      list.sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
-      return {
-        key: `viewType:${viewType}`,
-        title: VIEW_TYPE_LABELS[viewType] ?? viewType,
-        icon: iconForViewType(viewType),
-        selectable: false,
-        children: list.map((v) => ({
-          key: `view:${v.id}`,
-          title: v.name,
-          icon: <FileTextOutlined />,
-          isLeaf: true,
-        })),
-      } satisfies DataNode;
-    });
+  const savedViewNodes: DataNode[] =
+    sorted.length === 0
+      ? [
+          {
+            key: 'views:empty',
+            title: 'No saved views',
+            selectable: false,
+            icon: <FileTextOutlined />,
+            isLeaf: true,
+          } satisfies DataNode,
+        ]
+      : sorted.map((v) => {
+          const viewpoint = ViewpointRegistry.get(v.viewpointId);
+          const viewpointLabel = viewpoint?.name ?? v.viewpointId;
+          return {
+            key: `view:${v.id}`,
+            title: (
+              <span>
+                {v.name} <span style={{ color: '#8c8c8c' }}>({viewpointLabel})</span>
+              </span>
+            ),
+            icon: <FileTextOutlined />,
+            isLeaf: true,
+          } satisfies DataNode;
+        });
 
   const children: DataNode[] = [
     ...(opts?.showCreate === false
@@ -86,23 +59,19 @@ const buildTree = (
             isLeaf: true,
           } satisfies DataNode,
         ]),
-    ...typeNodes,
-  ];
-
-  if (typeNodes.length === 0) {
-    children.push({
-      key: 'views:empty',
-      title: 'No saved views',
+    {
+      key: 'views:saved',
+      title: 'Saved Views',
+      icon: <ApartmentOutlined />,
       selectable: false,
-      icon: <FileTextOutlined />,
-      isLeaf: true,
-    });
-  }
+      children: savedViewNodes,
+    } satisfies DataNode,
+  ];
 
   return [
     {
       key: 'diagrams',
-      title: 'Diagrams',
+      title: 'DIAGRAMS',
       icon: <ApartmentOutlined />,
       selectable: false,
       children,
@@ -111,32 +80,48 @@ const buildTree = (
 };
 
 const DiagramsTree: React.FC = () => {
-  const { openRouteTab, openWorkspaceTab, studioMode } = useIdeShell();
-  const { setSelection } = useIdeSelection();
+  const { openRouteTab, studioMode, requestStudioViewSwitch } = useIdeShell();
+  const { selection, setSelection, setSelectedElement } = useIdeSelection();
   const { metadata } = useEaRepository();
+  const location = useLocation();
 
   const [treeData, setTreeData] = React.useState<DataNode[]>(() => {
     try {
-      const views = getViewRepository().listAllViews();
-      return buildTree(views, metadata?.architectureScope ?? null, { showCreate: !studioMode });
+      const views = ViewStore.list();
+      return buildTree(views, { showCreate: true });
     } catch {
-      return buildTree([], metadata?.architectureScope ?? null, { showCreate: !studioMode });
+      return buildTree([], { showCreate: true });
     }
   });
 
   React.useEffect(() => {
     const refresh = () => {
       try {
-        setTreeData(buildTree(getViewRepository().listAllViews(), metadata?.architectureScope ?? null, { showCreate: !studioMode }));
+        setTreeData(buildTree(ViewStore.list(), { showCreate: true }));
       } catch {
-        setTreeData(buildTree([], metadata?.architectureScope ?? null, { showCreate: !studioMode }));
+        setTreeData(buildTree([], { showCreate: true }));
       }
     };
 
     refresh();
     window.addEventListener('ea:viewsChanged', refresh);
     return () => window.removeEventListener('ea:viewsChanged', refresh);
-  }, [metadata?.architectureScope, studioMode]);
+  }, [metadata?.updatedAt]);
+
+  const activeViewId = React.useMemo(() => {
+    const path = location?.pathname ?? '';
+    if (!path.startsWith('/views/')) return null;
+    if (path.startsWith('/views/create')) return null;
+    const parts = path.split('/').filter(Boolean);
+    return parts.length >= 2 ? parts[1] : null;
+  }, [location?.pathname]);
+
+  const selectedKeys = React.useMemo(() => {
+    if (activeViewId) return [`view:${activeViewId}`];
+    if (selection.kind === 'view' && selection.keys.length > 0) return [`view:${selection.keys[0]}`];
+    if (selection.kind === 'route' && selection.keys.length > 0) return [selection.keys[0]];
+    return [] as string[];
+  }, [activeViewId, selection.kind, selection.keys]);
 
   return (
     <div className={styles.explorerTree}>
@@ -145,16 +130,18 @@ const DiagramsTree: React.FC = () => {
         defaultExpandAll
         selectable
         treeData={treeData}
-        onSelect={(selectedKeys: React.Key[]) => {
+        selectedKeys={selectedKeys}
+        onSelect={(selectedKeys: React.Key[], info) => {
           const key = selectedKeys?.[0];
           if (typeof key !== 'string') return;
 
           if (key === '/views/create') {
             if (studioMode) {
-              message.info('Create View is available in Studio via the + Add View button.');
+              setSelection({ kind: 'route', keys: [] });
+              window.dispatchEvent(new CustomEvent('ea:studio.view.create'));
               return;
             }
-            setSelection({ kind: 'route', keys: [key] });
+            setSelection({ kind: 'route', keys: [] });
             openRouteTab(key);
             return;
           }
@@ -163,7 +150,15 @@ const DiagramsTree: React.FC = () => {
             const viewId = key.slice('view:'.length);
             if (!viewId) return;
             setSelection({ kind: 'view', keys: [viewId] });
-            openWorkspaceTab({ type: 'view', viewId });
+            if (studioMode) {
+              setSelectedElement(null);
+              setSelection({ kind: 'none', keys: [] });
+              const native = info?.nativeEvent as MouseEvent | KeyboardEvent | undefined;
+              const modifier = Boolean(native && (native.metaKey || native.ctrlKey || native.shiftKey));
+              requestStudioViewSwitch(viewId, { openMode: modifier ? 'new' : 'replace' });
+              return;
+            }
+            openRouteTab(`/views/${viewId}`);
           }
         }}
       />

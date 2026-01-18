@@ -76,6 +76,7 @@ export class EaRepository {
     return next;
   }
 
+  // Contract: addObject inserts exactly one element; it must never auto-create other elements.
   addObject(object: { id: string; type: unknown; attributes?: Record<string, unknown> }): EaRepositoryAddResult {
     const id = (object.id ?? '').trim();
     if (!id) return { ok: false, error: 'Object id is required.' };

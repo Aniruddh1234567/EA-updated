@@ -9,6 +9,7 @@ export const OBJECT_TYPES = [
   'Department',
   'Application',
   'ApplicationService',
+  'Interface',
   'Technology',
   'Node',
   'Compute',
@@ -23,6 +24,7 @@ export const OBJECT_TYPES = [
   'Project',
   'Principle',
   'Requirement',
+  'Standard',
 ] as const;
 
 export type ObjectType = (typeof OBJECT_TYPES)[number];
@@ -134,6 +136,14 @@ export const OBJECT_TYPE_DEFINITIONS: Record<ObjectType, EaObjectTypeDefinition>
     allowedOutgoingRelationships: [],
     allowedIncomingRelationships: [],
   },
+  Standard: {
+    type: 'Standard',
+    layer: 'Strategy',
+    description: 'A governance standard that constrains architecture decisions and delivery.',
+    attributes: ['name'],
+    allowedOutgoingRelationships: [],
+    allowedIncomingRelationships: [],
+  },
   CapabilityCategory: {
     type: 'CapabilityCategory',
     layer: 'Business',
@@ -205,6 +215,14 @@ export const OBJECT_TYPE_DEFINITIONS: Record<ObjectType, EaObjectTypeDefinition>
     attributes: ['name'],
     allowedOutgoingRelationships: ['SUPPORTS', 'CONSUMES', 'DEPENDS_ON'],
     allowedIncomingRelationships: ['PROVIDES', 'CONSUMES', 'DEPENDS_ON', 'SUPPORTED_BY'],
+  },
+  Interface: {
+    type: 'Interface',
+    layer: 'Application',
+    description: 'An application interface (contract/endpoint).',
+    attributes: ['name'],
+    allowedOutgoingRelationships: [],
+    allowedIncomingRelationships: [],
   },
   Technology: {
     type: 'Technology',

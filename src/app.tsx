@@ -9,7 +9,7 @@ import { ProDescriptions, SettingDrawer } from '@ant-design/pro-components';
 import type { RequestConfig, RunTimeLayoutConfig } from '@umijs/max';
 import { Link, useLocation } from '@umijs/max';
 import React from 'react';
-import { Collapse, Descriptions, Drawer, Dropdown, Tree, Typography, message, theme as antdTheme } from 'antd';
+import { Checkbox, Collapse, Descriptions, Drawer, Dropdown, Form, Input, Modal, Select, Tree, Typography, message, theme as antdTheme } from 'antd';
 import type { DataNode } from 'antd/es/tree';
 import { AvatarDropdown, AvatarName } from '@/components';
 import IdeShellLayout from '@/components/IdeShellLayout';
@@ -57,6 +57,20 @@ const defaultLifecycleStateForFramework = (
     return lifecycleCoverage === 'To-Be' ? 'Target' : 'Baseline';
   }
   return defaultLifecycleStateForLifecycleCoverage(lifecycleCoverage as any);
+};
+
+const lifecycleOptionsForFramework = (
+  referenceFramework: string | null | undefined,
+  lifecycleCoverage: string | null | undefined,
+): string[] => {
+  if (referenceFramework === 'TOGAF') {
+    if (lifecycleCoverage === 'To-Be') return ['Target'];
+    if (lifecycleCoverage === 'As-Is') return ['Baseline'];
+    return ['Baseline', 'Target'];
+  }
+  if (lifecycleCoverage === 'To-Be') return ['To-Be'];
+  if (lifecycleCoverage === 'As-Is') return ['As-Is'];
+  return ['As-Is', 'To-Be'];
 };
 
 type MetamodelSelection =
@@ -165,8 +179,28 @@ const defaultIdPrefixForType = (type: ObjectType) => {
       return 'app-';
     case 'ApplicationService':
       return 'appsvc-';
+    case 'Interface':
+      return 'iface-';
     case 'Technology':
       return 'tech-';
+    case 'Node':
+      return 'node-';
+    case 'Compute':
+      return 'compute-';
+    case 'Runtime':
+      return 'runtime-';
+    case 'Database':
+      return 'db-';
+    case 'Storage':
+      return 'storage-';
+    case 'API':
+      return 'api-';
+    case 'MessageBroker':
+      return 'mb-';
+    case 'IntegrationPlatform':
+      return 'int-';
+    case 'CloudService':
+      return 'cloud-';
     case 'Programme':
       return 'prog-';
     case 'CapabilityCategory':
@@ -198,6 +232,7 @@ const EaExplorerSiderContent: React.FC<{
   const [activeKeys, setActiveKeys] = React.useState<string[]>(['Workspace', 'Metamodel', 'Catalogues', 'Diagrams']);
   const [drawerOpen, setDrawerOpen] = React.useState(false);
   const [selection, setSelection] = React.useState<DrawerSelection | undefined>(undefined);
+  const isReadOnlyMode = (metadata?.governanceMode ?? 'Advisory') === 'Advisory';
 
   const treeData = React.useMemo(() => buildMetamodelTreeData(), []);
 
@@ -232,7 +267,17 @@ const EaExplorerSiderContent: React.FC<{
     const departments = byType('Department');
     const applications = byType('Application');
     const applicationServices = byType('ApplicationService');
+    const interfaces = byType('Interface');
     const technology = byType('Technology');
+    const nodes = byType('Node');
+    const compute = byType('Compute');
+    const runtime = byType('Runtime');
+    const databases = byType('Database');
+    const storage = byType('Storage');
+    const apis = byType('API');
+    const messageBrokers = byType('MessageBroker');
+    const integrationPlatforms = byType('IntegrationPlatform');
+    const cloudServices = byType('CloudService');
     const programmes = byType('Programme');
 
     const leaf = (id: string, title: string): DataNode => ({
@@ -321,13 +366,57 @@ const EaExplorerSiderContent: React.FC<{
             selectable: false,
             children: toLeaves(applicationServices),
           },
+          {
+            key: 'catalogueType:Interface',
+            title: 'Interfaces',
+            selectable: false,
+            children: toLeaves(interfaces),
+          },
         ],
       },
       {
-        key: 'catalogueType:Technology',
+        key: 'catalogues:technology',
         title: 'Technology',
         selectable: false,
-        children: toLeaves(technology),
+        children: [
+          {
+            key: 'catalogueType:Node',
+            title: 'Nodes',
+            selectable: false,
+            children: toLeaves(nodes),
+          },
+          {
+            key: 'catalogueType:Compute',
+            title: 'Compute',
+            selectable: false,
+            children: toLeaves(compute),
+          },
+          {
+            key: 'catalogueType:Runtime',
+            title: 'Runtime',
+            selectable: false,
+            children: toLeaves(runtime),
+          },
+          {
+            key: 'catalogueType:Database',
+            title: 'Databases',
+            selectable: false,
+            children: toLeaves(databases),
+          },
+          {
+            key: 'catalogueType:Technology',
+            title: 'Infrastructure Services',
+            selectable: false,
+            children: toLeaves([
+              ...technology,
+              ...storage,
+              ...apis,
+              ...messageBrokers,
+              ...integrationPlatforms,
+              ...cloudServices,
+            ]),
+          },
+        ],
       },
       {
         key: 'catalogueType:Programme',
@@ -345,6 +434,10 @@ const EaExplorerSiderContent: React.FC<{
 
   const createNewElement = React.useCallback(
     (type: ObjectType) => {
+      if (isReadOnlyMode) {
+        message.warning('Read-only mode: creation is disabled.');
+        return;
+      }
       if (metadata?.referenceFramework === 'Custom') {
         if (!isCustomFrameworkModelingEnabled('Custom', metadata?.frameworkConfig ?? undefined)) {
           message.warning('Custom framework: define at least one element type in Metamodel to enable modeling.');
@@ -382,41 +475,114 @@ const EaExplorerSiderContent: React.FC<{
       })();
 
       const id = makeUniqueId(existingIds, `${prefix}${nextNumber}`);
-      const name = `New ${type}`;
-      const lifecycleState = defaultLifecycleStateForFramework(metadata?.referenceFramework, metadata?.lifecycleCoverage);
-      if (!isLifecycleStateAllowedForReferenceFramework(metadata?.referenceFramework, lifecycleState)) {
-        message.warning('Lifecycle state is not allowed for the selected Reference Framework.');
-        return;
-      }
-      const attributes: Record<string, unknown> = {
-        name,
-        hiddenFromDiagrams: true,
-        lifecycleState,
-      };
-      if (type === 'Application') {
-        attributes.criticality = 'low';
-        attributes.lifecycle = 'planned';
-      }
+      let name = '';
+      let lifecycleState = '';
+      let hideFromDiagrams = false;
+      let admPhase = '';
+      const lifecycleOptions = lifecycleOptionsForFramework(metadata?.referenceFramework, metadata?.lifecycleCoverage);
+      const lifecyclePlaceholder = defaultLifecycleStateForFramework(metadata?.referenceFramework, metadata?.lifecycleCoverage);
 
-      if (metadata?.referenceFramework === 'TOGAF') {
-        attributes.admPhase = 'A';
-      }
+      Modal.confirm({
+        title: `Create ${type}`,
+        okText: 'Create',
+        cancelText: 'Cancel',
+        content: (
+          <Form layout="vertical">
+            <Form.Item label="ID">
+              <Input value={id} readOnly />
+            </Form.Item>
+            <Form.Item label="Name" required>
+              <Input
+                placeholder="Enter name"
+                onChange={(e) => {
+                  name = e.target.value;
+                }}
+              />
+            </Form.Item>
+            <Form.Item label="Lifecycle State" required>
+              <Select
+                placeholder={`Select lifecycle state (suggested: ${lifecyclePlaceholder})`}
+                options={lifecycleOptions.map((v) => ({ value: v, label: v }))}
+                onChange={(v) => {
+                  lifecycleState = String(v);
+                }}
+              />
+            </Form.Item>
+            {metadata?.referenceFramework === 'TOGAF' ? (
+              <Form.Item label="ADM Phase" required>
+                <Input
+                  placeholder="Enter ADM phase (e.g., A)"
+                  onChange={(e) => {
+                    admPhase = e.target.value;
+                  }}
+                />
+              </Form.Item>
+            ) : null}
+            <Form.Item>
+              <Checkbox
+                onChange={(e) => {
+                  hideFromDiagrams = e.target.checked;
+                }}
+              >
+                Hide from diagrams initially
+              </Checkbox>
+            </Form.Item>
+          </Form>
+        ),
+        onOk: () => {
+          const finalName = name.trim();
+          if (!finalName) {
+            message.error('Name is required.');
+            return Promise.reject();
+          }
+          const finalLifecycle = (lifecycleState ?? '').trim();
+          if (!finalLifecycle) {
+            message.error('Lifecycle state is required.');
+            return Promise.reject();
+          }
+          if (!isLifecycleStateAllowedForReferenceFramework(metadata?.referenceFramework, finalLifecycle)) {
+            message.warning('Lifecycle state is not allowed for the selected Reference Framework.');
+            return Promise.reject();
+          }
+          if (metadata?.referenceFramework === 'TOGAF') {
+            const finalPhase = admPhase.trim();
+            if (!finalPhase) {
+              message.error('ADM phase is required for TOGAF.');
+              return Promise.reject();
+            }
+          }
 
-      const next = eaRepository.clone();
-      const res = next.addObject({ id, type, attributes });
-      if (!res.ok) {
-        message.error(res.error);
-        return;
-      }
-      const applied = trySetEaRepository(next);
-      if (!applied.ok) return;
-      selectCatalogueObject(id);
+          const attributes: Record<string, unknown> = {
+            name: finalName,
+            lifecycleState: finalLifecycle,
+            ...(hideFromDiagrams ? { hiddenFromDiagrams: true } : {}),
+          };
+          if (metadata?.referenceFramework === 'TOGAF') {
+            attributes.admPhase = admPhase.trim();
+          }
+
+          const next = eaRepository.clone();
+          const res = next.addObject({ id, type, attributes });
+          if (!res.ok) {
+            message.error(res.error);
+            return Promise.reject();
+          }
+          const applied = trySetEaRepository(next);
+          if (!applied.ok) return Promise.reject();
+          selectCatalogueObject(id);
+          return Promise.resolve();
+        },
+      });
     },
     [eaRepository, metadata?.frameworkConfig, metadata?.lifecycleCoverage, metadata?.referenceFramework, selectCatalogueObject, trySetEaRepository],
   );
 
   const duplicateElement = React.useCallback(
     (objectId: string) => {
+      if (isReadOnlyMode) {
+        message.warning('Read-only mode: duplication is disabled.');
+        return;
+      }
       const source = eaRepository.objects.get(objectId);
       if (!source) {
         message.error('Cannot duplicate: object not found.');
@@ -447,63 +613,214 @@ const EaExplorerSiderContent: React.FC<{
 
       const existingIds = new Set<string>(eaRepository.objects.keys());
       const id = makeUniqueId(existingIds, `${source.id}-copy`);
-      const lifecycleState = defaultLifecycleStateForFramework(metadata?.referenceFramework, metadata?.lifecycleCoverage);
-      if (!isLifecycleStateAllowedForReferenceFramework(metadata?.referenceFramework, lifecycleState)) {
-        message.warning('Lifecycle state is not allowed for the selected Reference Framework.');
-        return;
-      }
-      const attributes = {
-        ...source.attributes,
-        lifecycleState,
-      } as typeof source.attributes & { name?: string };
-      if (typeof attributes.name === 'string' && attributes.name.trim()) {
-        attributes.name = `${attributes.name} (copy)`;
-      }
+      let name = '';
+      let lifecycleState = '';
+      let admPhase = '';
+      let copyOwnership = false;
+      let copyAdmPhase = false;
+      const lifecycleOptions = lifecycleOptionsForFramework(metadata?.referenceFramework, metadata?.lifecycleCoverage);
+      const lifecyclePlaceholder = defaultLifecycleStateForFramework(metadata?.referenceFramework, metadata?.lifecycleCoverage);
+      const hasOwnership = Boolean((source.attributes as any)?.ownerId || (source.attributes as any)?.ownerType);
 
-      if (metadata?.referenceFramework === 'TOGAF') {
-        if (typeof (attributes as any).admPhase !== 'string' || !(attributes as any).admPhase.trim()) {
-          (attributes as any).admPhase = 'A';
-        }
-      }
+      Modal.confirm({
+        title: `Duplicate ${source.type}`,
+        okText: 'Duplicate',
+        cancelText: 'Cancel',
+        content: (
+          <Form layout="vertical">
+            <Form.Item label="New ID">
+              <Input value={id} readOnly />
+            </Form.Item>
+            <Form.Item label="New Name" required>
+              <Input
+                placeholder="Enter name"
+                onChange={(e) => {
+                  name = e.target.value;
+                }}
+              />
+            </Form.Item>
+            <Form.Item label="Lifecycle State" required>
+              <Select
+                placeholder={`Select lifecycle state (suggested: ${lifecyclePlaceholder})`}
+                options={lifecycleOptions.map((v) => ({ value: v, label: v }))}
+                onChange={(v) => {
+                  lifecycleState = String(v);
+                }}
+              />
+            </Form.Item>
+            {metadata?.referenceFramework === 'TOGAF' ? (
+              <Form.Item label="ADM Phase" required>
+                <Input
+                  placeholder="Enter ADM phase (e.g., A)"
+                  onChange={(e) => {
+                    admPhase = e.target.value;
+                  }}
+                />
+                <Checkbox
+                  onChange={(e) => {
+                    copyAdmPhase = e.target.checked;
+                  }}
+                >
+                  Copy ADM phase from source
+                </Checkbox>
+              </Form.Item>
+            ) : null}
+            {hasOwnership ? (
+              <Form.Item>
+                <Checkbox
+                  onChange={(e) => {
+                    copyOwnership = e.target.checked;
+                  }}
+                >
+                  Copy ownership fields (ownerId/ownerType)
+                </Checkbox>
+              </Form.Item>
+            ) : null}
+          </Form>
+        ),
+        onOk: () => {
+          const finalName = name.trim();
+          if (!finalName) {
+            message.error('Name is required.');
+            return Promise.reject();
+          }
+          const finalLifecycle = (lifecycleState ?? '').trim();
+          if (!finalLifecycle) {
+            message.error('Lifecycle state is required.');
+            return Promise.reject();
+          }
+          if (!isLifecycleStateAllowedForReferenceFramework(metadata?.referenceFramework, finalLifecycle)) {
+            message.warning('Lifecycle state is not allowed for the selected Reference Framework.');
+            return Promise.reject();
+          }
+          let finalAdmPhase = '';
+          if (metadata?.referenceFramework === 'TOGAF') {
+            finalAdmPhase = copyAdmPhase
+              ? String((source.attributes as any)?.admPhase ?? '').trim()
+              : admPhase.trim();
+            if (!finalAdmPhase) {
+              message.error('ADM phase is required for TOGAF.');
+              return Promise.reject();
+            }
+          }
 
-      const next = eaRepository.clone();
-      const res = next.addObject({ id, type: source.type, attributes });
-      if (!res.ok) {
-        message.error(res.error);
-        return;
-      }
-      const applied = trySetEaRepository(next);
-      if (!applied.ok) return;
-      selectCatalogueObject(id);
+          const { ownerId, ownerType, ...restAttributes } = (source.attributes ?? {}) as Record<string, unknown>;
+          const attributes: Record<string, unknown> = {
+            ...restAttributes,
+            name: finalName,
+            lifecycleState: finalLifecycle,
+          };
+          if (metadata?.referenceFramework === 'TOGAF') {
+            attributes.admPhase = finalAdmPhase;
+          }
+          if (copyOwnership && hasOwnership) {
+            attributes.ownerId = ownerId;
+            attributes.ownerType = ownerType;
+          }
+
+          const next = eaRepository.clone();
+          const res = next.addObject({ id, type: source.type, attributes });
+          if (!res.ok) {
+            message.error(res.error);
+            return Promise.reject();
+          }
+          const applied = trySetEaRepository(next);
+          if (!applied.ok) return Promise.reject();
+          selectCatalogueObject(id);
+          return Promise.resolve();
+        },
+      });
     },
     [eaRepository, metadata?.frameworkConfig, metadata?.lifecycleCoverage, metadata?.referenceFramework, selectCatalogueObject, trySetEaRepository],
   );
 
   const softDeleteElement = React.useCallback(
     (objectId: string) => {
+      if (isReadOnlyMode) {
+        message.warning('Read-only mode: deletion is disabled.');
+        return;
+      }
       const existing = eaRepository.objects.get(objectId);
       if (!existing) {
         message.error('Cannot delete: object not found.');
         return;
       }
+      const impacted = eaRepository.relationships.filter((r) => r.fromId === objectId || r.toId === objectId);
+      const impactedCount = impacted.length;
+      const impactedPreview = impacted.slice(0, 10).map((r) => {
+        const source = eaRepository.objects.get(r.fromId);
+        const target = eaRepository.objects.get(r.toId);
+        const sourceName = source && typeof source.attributes?.name === 'string' && source.attributes.name.trim()
+          ? String(source.attributes.name)
+          : r.fromId;
+        const targetName = target && typeof target.attributes?.name === 'string' && target.attributes.name.trim()
+          ? String(target.attributes.name)
+          : r.toId;
+        return `${sourceName} —${r.type}→ ${targetName}`;
+      });
+      let removeRelationships = false;
 
-      const next = eaRepository.clone();
-      const res = next.updateObjectAttributes(
-        objectId,
-        { _deleted: true, deletedAt: Date.now(), hiddenFromDiagrams: true },
-        'merge',
-      );
-      if (!res.ok) {
-        message.error(res.error);
-        return;
-      }
+      Modal.confirm({
+        title: 'Delete element?',
+        okText: 'Delete',
+        okButtonProps: { danger: true },
+        cancelText: 'Cancel',
+        content: (
+          <div style={{ display: 'grid', gap: 8 }}>
+            <Typography.Text>
+              Deletes "{typeof existing.attributes?.name === 'string' && existing.attributes.name.trim() ? existing.attributes.name : existing.id}".
+              Relationships are kept unless explicitly removed.
+            </Typography.Text>
+            <div>
+              <Typography.Text type="secondary">Impacted relationships ({impactedCount})</Typography.Text>
+              {impactedCount === 0 ? (
+                <Typography.Text type="secondary" style={{ display: 'block' }}>
+                  None
+                </Typography.Text>
+              ) : (
+                <ul style={{ margin: '6px 0 0 16px' }}>
+                  {impactedPreview.map((line) => (
+                    <li key={line}>{line}</li>
+                  ))}
+                  {impactedCount > impactedPreview.length ? (
+                    <li>…and {impactedCount - impactedPreview.length} more</li>
+                  ) : null}
+                </ul>
+              )}
+            </div>
+            <Checkbox
+              onChange={(e) => {
+                removeRelationships = e.target.checked;
+              }}
+            >
+              Also delete impacted relationships
+            </Checkbox>
+          </div>
+        ),
+        onOk: () => {
+          const next = eaRepository.clone();
+          if (removeRelationships) {
+            next.relationships = next.relationships.filter((r) => r.fromId !== objectId && r.toId !== objectId);
+          }
+          const res = next.updateObjectAttributes(
+            objectId,
+            { _deleted: true, deletedAt: Date.now(), hiddenFromDiagrams: true },
+            'merge',
+          );
+          if (!res.ok) {
+            message.error(res.error);
+            return Promise.reject();
+          }
 
-      const applied = trySetEaRepository(next);
-      if (!applied.ok) return;
-      if (selection?.kind === 'catalogueObject' && selection.objectId === objectId) {
-        setDrawerOpen(false);
-        setSelection(undefined);
-      }
+          const applied = trySetEaRepository(next);
+          if (!applied.ok) return Promise.reject();
+          if (selection?.kind === 'catalogueObject' && selection.objectId === objectId) {
+            setDrawerOpen(false);
+            setSelection(undefined);
+          }
+          return Promise.resolve();
+        },
+      });
     },
     [eaRepository, selection, trySetEaRepository],
   );
@@ -517,7 +834,7 @@ const EaExplorerSiderContent: React.FC<{
       const items = [] as any[];
       if (typeFromKey) {
         const guard = canCreateObjectTypeForLifecycleCoverage(metadata?.lifecycleCoverage, typeFromKey);
-        items.push({ key: 'new', label: 'New Element', disabled: !guard.ok });
+        items.push({ key: 'new', label: 'New Element', disabled: !guard.ok || isReadOnlyMode });
       }
 
       if (objectSelection) {
@@ -526,10 +843,10 @@ const EaExplorerSiderContent: React.FC<{
           ? canCreateObjectTypeForLifecycleCoverage(metadata?.lifecycleCoverage, selectedType)
           : ({ ok: true } as const);
         items.push(
-          { key: 'new', label: 'New Element', disabled: !guard.ok },
-          { key: 'duplicate', label: 'Duplicate' },
+          { key: 'new', label: 'New Element', disabled: !guard.ok || isReadOnlyMode },
+          { key: 'duplicate', label: 'Duplicate', disabled: isReadOnlyMode },
           { type: 'divider' },
-          { key: 'delete', label: 'Delete (soft delete)', danger: true },
+          { key: 'delete', label: 'Delete (soft delete)', danger: true, disabled: isReadOnlyMode },
         );
       }
 
@@ -883,6 +1200,10 @@ export const layout: RunTimeLayoutConfig = ({
     // 增加一个 loading 的状态
     childrenRender: (children) => {
       // if (initialState?.loading) return <PageLoading />;
+      const pathname = typeof window !== 'undefined' ? window.location?.pathname || '' : '';
+      if (pathname.startsWith('/studio')) {
+        return children;
+      }
       return (
         <RepositoryGate
           shell={

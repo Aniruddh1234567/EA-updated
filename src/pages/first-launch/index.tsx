@@ -1,4 +1,5 @@
 import React from 'react';
+import { v4 as uuid } from 'uuid';
 import { history, useModel } from '@umijs/max';
 import { PageContainer } from '@ant-design/pro-components';
 import { Button, Card, Empty, Form, Input, Modal, Radio, Select, Space, Typography, message } from 'antd';
@@ -19,10 +20,8 @@ import {
   type TimeHorizon,
 } from '@/repository/repositoryMetadata';
 import { CUSTOM_CORE_EA_SEED } from '@/repository/customFrameworkConfig';
-import { seedDefaultViewsForEnterpriseScope } from '@/repository/enterpriseScopeInit';
-import { seedDefaultViewsForDomainScope } from '@/repository/domainScopeInit';
-import { seedDefaultViewsForProgrammeScope } from '@/repository/programmeScopeInit';
 import { ViewStore } from '@/diagram-studio/view-runtime/ViewStore';
+import { ViewLayoutStore } from '@/diagram-studio/view-runtime/ViewLayoutStore';
 import { DesignWorkspaceStore } from '@/ea/DesignWorkspaceStore';
 
 const safeSlug = (value: string) =>
@@ -49,25 +48,27 @@ const readLocalStorage = (key: string): string | null => {
   }
 };
 
-const viewLayoutStorageKey = (viewId: string) => `ea.view.layout.positions:${viewId}`;
-
 const FirstLaunch: React.FC = () => {
   const { initialState } = useModel('@@initialState');
   const { createNewRepository, loadRepositoryFromJsonText, eaRepository, metadata } = useEaRepository();
   const { createProject, refreshProject } = useEaProject();
 
-  const PROJECT_FILE_PATH_KEY = 'ea.project.filePath';
-  const PROJECT_FILE_NAME_KEY = 'ea.project.fileName';
+  const ACTIVE_REPO_ID_KEY = 'ea.repository.activeId';
+  const ACTIVE_REPO_NAME_KEY = 'ea.repository.activeName';
   const PROJECT_DIRTY_KEY = 'ea.project.dirty';
   const PROJECT_STATUS_EVENT = 'ea:projectStatusChanged';
-  const RECENT_PROJECTS_KEY = 'ea.project.recent';
+  const RECENT_REPOSITORIES_KEY = 'ea.repository.recent';
+  const LEGACY_PROJECT_PATH_KEY = 'ea.project.filePath';
+  const LEGACY_RECENT_PROJECTS_KEY = 'ea.project.recent';
 
   const [mode, setMode] = React.useState<'home' | 'create'>('home');
   const [customSeedModalOpen, setCustomSeedModalOpen] = React.useState(false);
   const [customFrameworkConfig, setCustomFrameworkConfig] = React.useState<FrameworkConfig | undefined>(undefined);
   const lastFrameworkRef = React.useRef<ReferenceFramework>('ArchiMate');
+  const [legacyImportAvailable, setLegacyImportAvailable] = React.useState(false);
+  const [legacyImporting, setLegacyImporting] = React.useState(false);
   const [recentProjects, setRecentProjects] = React.useState<
-    Array<{ name: string; path?: string | null; lastOpened?: string | null }>
+    Array<{ id: string; name: string; description?: string | null; lastOpened?: string | null }>
   >([]);
   const [form] = Form.useForm<{
     repositoryName: string;
@@ -91,32 +92,44 @@ const FirstLaunch: React.FC = () => {
   }, [eaRepository, metadata]);
 
   const updateProjectStatus = React.useCallback(
-    (opts: { filePath?: string | null; dirty?: boolean | null; clear?: boolean }) => {
+    (opts: { repositoryId?: string | null; repositoryName?: string | null; dirty?: boolean | null; clear?: boolean }) => {
       if (opts.clear) {
         try {
-          localStorage.removeItem(PROJECT_FILE_PATH_KEY);
-          localStorage.removeItem(PROJECT_FILE_NAME_KEY);
+          localStorage.removeItem(ACTIVE_REPO_ID_KEY);
+          localStorage.removeItem(ACTIVE_REPO_NAME_KEY);
           localStorage.removeItem(PROJECT_DIRTY_KEY);
         } catch {
           // ignore
         }
       } else {
-        if (opts.filePath === null) {
+        if (opts.repositoryId === null) {
           try {
-            localStorage.removeItem(PROJECT_FILE_PATH_KEY);
-            localStorage.removeItem(PROJECT_FILE_NAME_KEY);
+            localStorage.removeItem(ACTIVE_REPO_ID_KEY);
           } catch {
             // ignore
           }
-        } else if (typeof opts.filePath === 'string') {
-          const fileName = opts.filePath.split(/[\\/]/).pop() ?? '';
+        } else if (typeof opts.repositoryId === 'string') {
           try {
-            localStorage.setItem(PROJECT_FILE_PATH_KEY, opts.filePath);
-            localStorage.setItem(PROJECT_FILE_NAME_KEY, fileName);
+            localStorage.setItem(ACTIVE_REPO_ID_KEY, opts.repositoryId);
           } catch {
             // ignore
           }
         }
+
+        if (opts.repositoryName === null) {
+          try {
+            localStorage.removeItem(ACTIVE_REPO_NAME_KEY);
+          } catch {
+            // ignore
+          }
+        } else if (typeof opts.repositoryName === 'string') {
+          try {
+            localStorage.setItem(ACTIVE_REPO_NAME_KEY, opts.repositoryName);
+          } catch {
+            // ignore
+          }
+        }
+
         if (typeof opts.dirty === 'boolean') {
           try {
             localStorage.setItem(PROJECT_DIRTY_KEY, String(opts.dirty));
@@ -132,57 +145,49 @@ const FirstLaunch: React.FC = () => {
         // ignore
       }
     },
-    [PROJECT_DIRTY_KEY, PROJECT_FILE_NAME_KEY, PROJECT_FILE_PATH_KEY, PROJECT_STATUS_EVENT],
+    [ACTIVE_REPO_ID_KEY, ACTIVE_REPO_NAME_KEY, PROJECT_DIRTY_KEY, PROJECT_STATUS_EVENT],
   );
 
   const applyProjectPayload = React.useCallback(
     (payload: any) => {
       const snapshot = payload?.repository?.snapshot ?? null;
       if (!snapshot || typeof snapshot !== 'object') {
-        return { ok: false, error: 'Invalid project file: missing repository snapshot.' } as const;
+        return { ok: false, error: 'Invalid repository data: missing snapshot.' } as const;
       }
 
       const snapshotText = JSON.stringify(snapshot);
       const loadRes = loadRepositoryFromJsonText(snapshotText);
       if (!loadRes.ok) return loadRes;
 
-      const viewItems = Array.isArray(payload?.views?.items) ? payload.views.items : [];
-      const viewLayouts = payload?.studioState?.viewLayouts ?? {};
+      const snapshotViews = Array.isArray((snapshot as any)?.views) ? (snapshot as any).views : [];
+      const viewItems = snapshotViews.length > 0 ? snapshotViews : Array.isArray(payload?.views?.items) ? payload.views.items : [];
+      const snapshotStudio = (snapshot as any)?.studioState ?? null;
+      const viewLayouts = snapshotStudio?.viewLayouts ?? payload?.studioState?.viewLayouts ?? {};
 
       const existingViews = ViewStore.list();
       for (const v of existingViews) {
-        try {
-          localStorage.removeItem(viewLayoutStorageKey(v.id));
-        } catch {
-          // ignore
-        }
+        ViewLayoutStore.remove(v.id);
       }
 
-      try {
-        localStorage.setItem('ea:diagram-views', JSON.stringify(viewItems));
-      } catch {
-        // Best-effort only.
-      }
+      ViewStore.replaceAll(viewItems);
 
       for (const v of viewItems as Array<{ id?: string }>) {
         const id = String(v?.id ?? '').trim();
         if (!id) continue;
         const layout = viewLayouts?.[id];
-        try {
-          if (layout && typeof layout === 'object') {
-            localStorage.setItem(viewLayoutStorageKey(id), JSON.stringify(layout));
-          } else {
-            localStorage.removeItem(viewLayoutStorageKey(id));
-          }
-        } catch {
-          // ignore
+        if (layout && typeof layout === 'object') {
+          ViewLayoutStore.set(id, layout as Record<string, { x: number; y: number }>);
+        } else {
+          ViewLayoutStore.remove(id);
         }
       }
 
       const repositoryName = snapshot?.metadata?.repositoryName || 'default';
-      const designWorkspaces = Array.isArray(payload?.studioState?.designWorkspaces)
-        ? payload.studioState.designWorkspaces
-        : [];
+      const designWorkspaces = Array.isArray(snapshotStudio?.designWorkspaces)
+        ? snapshotStudio.designWorkspaces
+        : Array.isArray(payload?.studioState?.designWorkspaces)
+          ? payload.studioState.designWorkspaces
+          : [];
       DesignWorkspaceStore.replaceAll(repositoryName, designWorkspaces);
 
       const ideLayout = payload?.studioState?.ideLayout ?? null;
@@ -237,25 +242,26 @@ const FirstLaunch: React.FC = () => {
   );
 
   const updateRecentProjects = React.useCallback(
-    (entry: { name: string; path?: string | null }) => {
+    (entry: { id: string; name: string; description?: string | null }) => {
       try {
-        const raw = localStorage.getItem(RECENT_PROJECTS_KEY);
-        const existing = safeParseJson<Array<{ name: string; path?: string; lastOpened?: string }>>(raw, []);
+        const raw = localStorage.getItem(RECENT_REPOSITORIES_KEY);
+        const existing = safeParseJson<Array<{ id: string; name: string; description?: string; lastOpened?: string }>>(raw, []);
         const next = [
           {
+            id: entry.id,
             name: entry.name,
-            path: entry.path ?? undefined,
+            description: entry.description ?? undefined,
             lastOpened: new Date().toISOString(),
           },
-          ...existing.filter((item) => item.path && item.path !== entry.path),
+          ...existing.filter((item) => item.id && item.id !== entry.id),
         ].slice(0, 10);
-        localStorage.setItem(RECENT_PROJECTS_KEY, JSON.stringify(next));
+        localStorage.setItem(RECENT_REPOSITORIES_KEY, JSON.stringify(next));
         setRecentProjects(next);
       } catch {
         // ignore
       }
     },
-    [RECENT_PROJECTS_KEY],
+    [RECENT_REPOSITORIES_KEY],
   );
 
   const waitForRepositoryReady = React.useCallback(async () => {
@@ -272,36 +278,8 @@ const FirstLaunch: React.FC = () => {
     const repoState = await waitForRepositoryReady();
     if (!repoState.eaRepository || !repoState.metadata) return null;
 
-    const repositorySnapshot = {
-      version: 1 as const,
-      metadata: repoState.metadata,
-      objects: Array.from(repoState.eaRepository.objects.values()).map((o) => ({
-        id: o.id,
-        type: o.type,
-        attributes: { ...(o.attributes ?? {}) },
-      })),
-      relationships: repoState.eaRepository.relationships.map((r) => ({
-        fromId: r.fromId,
-        toId: r.toId,
-        type: r.type,
-        attributes: { ...(r.attributes ?? {}) },
-      })),
-      updatedAt: new Date().toISOString(),
-    };
-
     const views = ViewStore.list();
-    const viewLayouts = views.reduce<Record<string, Record<string, { x: number; y: number }>>>(
-      (acc, view) => {
-        const raw = readLocalStorage(viewLayoutStorageKey(view.id));
-        const parsed = safeParseJson<Record<string, { x: number; y: number }>>(
-          raw,
-          {} as Record<string, { x: number; y: number }>,
-        );
-        acc[view.id] = parsed;
-        return acc;
-      },
-      {},
-    );
+    const viewLayouts = ViewLayoutStore.listAll();
 
     const repositoryName = repoState.metadata.repositoryName || 'default';
     const designWorkspaces = DesignWorkspaceStore.list(repositoryName);
@@ -326,11 +304,34 @@ const FirstLaunch: React.FC = () => {
       designWorkspaces,
     };
 
+    const repositorySnapshot = {
+      version: 1 as const,
+      metadata: repoState.metadata,
+      objects: Array.from(repoState.eaRepository.objects.values()).map((o) => ({
+        id: o.id,
+        type: o.type,
+        attributes: { ...(o.attributes ?? {}) },
+      })),
+      relationships: repoState.eaRepository.relationships.map((r) => ({
+        fromId: r.fromId,
+        toId: r.toId,
+        type: r.type,
+        attributes: { ...(r.attributes ?? {}) },
+      })),
+      views,
+      studioState: {
+        viewLayouts,
+        designWorkspaces,
+      },
+      updatedAt: new Date().toISOString(),
+    };
+
     return {
       version: 1 as const,
       meta: {
         createdAt: repoState.metadata.createdAt,
         updatedAt: new Date().toISOString(),
+        repositoryId: readLocalStorage(ACTIVE_REPO_ID_KEY) ?? undefined,
         repositoryName: repoState.metadata.repositoryName,
         organizationName: repoState.metadata.organizationName,
         referenceFramework: repoState.metadata.referenceFramework,
@@ -349,69 +350,46 @@ const FirstLaunch: React.FC = () => {
   }, [waitForRepositoryReady]);
 
   const handleOpenProject = React.useCallback(async () => {
-    if (!window.eaDesktop?.openProject) {
-      message.info('Open Project is available in the desktop app.');
+    if (!window.eaDesktop?.listManagedRepositories) {
+      message.info('Open Repository is available in the desktop app.');
       return;
     }
 
-    const res = await window.eaDesktop.openProject();
+    const res = await window.eaDesktop.listManagedRepositories();
     if (!res.ok) {
-      Modal.error({ title: 'Open Project failed', content: res.error });
-      return;
-    }
-    if (res.canceled) return;
-    if (!res.content) {
-      Modal.error({ title: 'Open Project failed', content: 'Empty project file.' });
+      Modal.error({ title: 'Refresh Repositories failed', content: res.error });
       return;
     }
 
-    try {
-      const payload = JSON.parse(res.content);
-      const applied = applyProjectPayload(payload);
-      if (!applied.ok) {
-        Modal.error({ title: 'Open Project failed', content: applied.error });
-        return;
-      }
+    setRecentProjects(
+      res.items.map((item) => ({
+        id: item.id,
+        name: item.name,
+        description: item.description ?? null,
+        lastOpened: item.lastOpenedAt ?? null,
+      })),
+    );
 
-      const name =
-        payload?.meta?.repositoryName ||
-        payload?.repository?.metadata?.repositoryName ||
-        res.filePath?.split(/[\\/]/).pop() ||
-        'EA Project';
-
-      try {
-        await createProject({
-          name,
-          description: payload?.meta?.organizationName ? `${payload.meta.organizationName} EA project` : '',
-        });
-      } catch {
-        // Best-effort only.
-      }
-
-      updateProjectStatus({ filePath: res.filePath ?? null, dirty: false });
-      updateRecentProjects({ name, path: res.filePath ?? null });
-      message.success('Project opened.');
-      history.push('/workspace');
-    } catch (err) {
-      Modal.error({ title: 'Open Project failed', content: err instanceof Error ? err.message : 'Invalid project file.' });
+    if (!res.items.length) {
+      message.info('No repositories found. Create a new repository to begin.');
     }
-  }, [applyProjectPayload, updateProjectStatus, updateRecentProjects]);
+  }, []);
 
   const handleOpenRecentProject = React.useCallback(
-    async (entry: { name: string; path?: string | null }) => {
-      if (!entry.path) return;
-      if (!window.eaDesktop?.openProjectAtPath) {
-        message.info('Open Project is available in the desktop app.');
+    async (entry: { id: string; name: string; description?: string | null }) => {
+      if (!entry.id) return;
+      if (!window.eaDesktop?.loadManagedRepository) {
+        message.info('Open Repository is available in the desktop app.');
         return;
       }
 
-      const res = await window.eaDesktop.openProjectAtPath(entry.path);
+      const res = await window.eaDesktop.loadManagedRepository(entry.id);
       if (!res.ok) {
-        Modal.error({ title: 'Open Project failed', content: res.error });
+        Modal.error({ title: 'Open Repository failed', content: res.error });
         return;
       }
       if (!res.content) {
-        Modal.error({ title: 'Open Project failed', content: 'Empty project file.' });
+        Modal.error({ title: 'Open Repository failed', content: 'Empty repository data.' });
         return;
       }
 
@@ -419,7 +397,7 @@ const FirstLaunch: React.FC = () => {
         const payload = JSON.parse(res.content);
         const applied = applyProjectPayload(payload);
         if (!applied.ok) {
-          Modal.error({ title: 'Open Project failed', content: applied.error });
+          Modal.error({ title: 'Open Repository failed', content: applied.error });
           return;
         }
 
@@ -427,70 +405,181 @@ const FirstLaunch: React.FC = () => {
           payload?.meta?.repositoryName ||
           payload?.repository?.metadata?.repositoryName ||
           entry.name ||
-          'EA Project';
+          'EA Repository';
 
         try {
           await createProject({
             name,
-            description: payload?.meta?.organizationName ? `${payload.meta.organizationName} EA project` : '',
+            description: payload?.meta?.organizationName ? `${payload.meta.organizationName} EA repository` : '',
           });
         } catch {
           // Best-effort only.
         }
 
-        updateProjectStatus({ filePath: res.filePath ?? entry.path, dirty: false });
-        updateRecentProjects({ name, path: res.filePath ?? entry.path });
-        message.success('Project opened.');
+        const description = payload?.meta?.organizationName
+          ? `${payload.meta.organizationName} EA repository`
+          : entry.description ?? null;
+        updateProjectStatus({ repositoryId: res.repositoryId ?? entry.id, repositoryName: name, dirty: false });
+        updateRecentProjects({ id: res.repositoryId ?? entry.id, name, description });
+        message.success('Repository opened.');
         history.push('/workspace');
       } catch (err) {
-        Modal.error({ title: 'Open Project failed', content: err instanceof Error ? err.message : 'Invalid project file.' });
+        Modal.error({ title: 'Open Repository failed', content: err instanceof Error ? err.message : 'Invalid repository data.' });
       }
     },
     [applyProjectPayload, updateProjectStatus, updateRecentProjects],
   );
 
-  const onImportFileSelected = async (file: File | undefined) => {
-    if (!file) return;
+  const importRepositoryPackage = React.useCallback(
+    async (rawText: string, sourceName?: string) => {
+      const payload = JSON.parse(rawText);
+      const applied = applyProjectPayload(payload);
+      if (!applied.ok) {
+        message.error(applied.error);
+        return;
+      }
+
+      const repoState = await waitForRepositoryReady();
+      const name =
+        payload?.meta?.repositoryName ||
+        payload?.repository?.metadata?.repositoryName ||
+        repoState.metadata?.repositoryName ||
+        sourceName ||
+        'Imported Repository';
+      const description = payload?.meta?.organizationName
+        ? `${payload.meta.organizationName} EA repository`
+        : repoState.metadata?.organizationName
+          ? `${repoState.metadata.organizationName} EA repository`
+          : null;
+      const repositoryId = uuid();
+      updateProjectStatus({ repositoryId, repositoryName: name, dirty: false });
+
+      if (window.eaDesktop?.saveManagedRepository) {
+        const nextPayload = await buildProjectPayload();
+        if (nextPayload) {
+          const saveRes = await window.eaDesktop.saveManagedRepository({ payload: nextPayload, repositoryId });
+          if (!saveRes.ok) {
+            message.error(saveRes.error);
+            return;
+          }
+        }
+      }
+
+      updateRecentProjects({ id: repositoryId, name, description });
+      message.success('Repository imported.');
+      history.push('/workspace');
+    },
+    [applyProjectPayload, buildProjectPayload, updateProjectStatus, updateRecentProjects, waitForRepositoryReady],
+  );
+
+  const resolveLegacyProjectPath = React.useCallback((): string | null => {
+    const direct = readLocalStorage(LEGACY_PROJECT_PATH_KEY);
+    if (direct) return direct;
+    const raw = readLocalStorage(LEGACY_RECENT_PROJECTS_KEY);
+    const parsed = safeParseJson<Array<{ path?: string }>>(raw, []);
+    const candidate = parsed.find((item) => typeof item.path === 'string' && item.path.trim());
+    return candidate?.path?.trim() || null;
+  }, [LEGACY_PROJECT_PATH_KEY, LEGACY_RECENT_PROJECTS_KEY]);
+
+  const handleLegacyImport = React.useCallback(async () => {
+    if (!window.eaDesktop?.importLegacyProjectAtPath) {
+      message.info('Legacy import is available in the desktop app.');
+      return;
+    }
+
+    const legacyPath = resolveLegacyProjectPath();
+    if (!legacyPath) {
+      message.info('No legacy repository detected.');
+      return;
+    }
+
+    setLegacyImporting(true);
     try {
-      const text = await readFileAsText(file);
-      const res = loadRepositoryFromJsonText(text);
+      const res = await window.eaDesktop.importLegacyProjectAtPath(legacyPath);
       if (!res.ok) {
         message.error(res.error);
         return;
       }
-      message.success('Repository imported.');
+
+      await importRepositoryPackage(res.content, res.name);
+
+      try {
+        localStorage.removeItem(LEGACY_PROJECT_PATH_KEY);
+        localStorage.removeItem(LEGACY_RECENT_PROJECTS_KEY);
+      } catch {
+        // ignore
+      }
+      setLegacyImportAvailable(false);
+    } finally {
+      setLegacyImporting(false);
+    }
+  }, [importRepositoryPackage, resolveLegacyProjectPath]);
+
+  const onImportFileSelected = async (file: File | undefined) => {
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith('.eaproj')) {
+      message.info('Please choose an .eaproj repository package.');
+      return;
+    }
+    try {
+      const text = await readFileAsText(file);
+      await importRepositoryPackage(text, file.name);
     } catch (e: any) {
       message.error(e?.message || 'Failed to import repository.');
     }
   };
 
-  const readRecentProjects = React.useCallback(() => {
+  const readRecentProjects = React.useCallback(async () => {
+    if (window.eaDesktop?.listManagedRepositories) {
+      const res = await window.eaDesktop.listManagedRepositories();
+      if (res.ok) {
+        setRecentProjects(
+          res.items.map((item) => ({
+            id: item.id,
+            name: item.name,
+            description: item.description ?? null,
+            lastOpened: item.lastOpenedAt ?? null,
+          })),
+        );
+        return;
+      }
+    }
+
     try {
-      const raw = localStorage.getItem(RECENT_PROJECTS_KEY);
+      const raw = localStorage.getItem(RECENT_REPOSITORIES_KEY);
       if (raw) {
-        const parsed = safeParseJson<Array<{ name: string; path?: string; lastOpened?: string }>>(raw, []);
+        const parsed = safeParseJson<Array<{ id: string; name: string; description?: string; lastOpened?: string }>>(raw, []);
         if (parsed.length) {
-          setRecentProjects(parsed);
+          setRecentProjects(
+            parsed.map((item) => ({
+              id: item.id,
+              name: item.name,
+              description: item.description ?? null,
+              lastOpened: item.lastOpened ?? null,
+            })),
+          );
           return;
         }
       }
-      const filePath = localStorage.getItem(PROJECT_FILE_PATH_KEY);
-      const fileName = localStorage.getItem(PROJECT_FILE_NAME_KEY);
-      const name = fileName?.trim() || filePath?.split(/[\\/]/).pop() || '';
-      if (!name) {
+
+      const activeId = localStorage.getItem(ACTIVE_REPO_ID_KEY);
+      const activeName = localStorage.getItem(ACTIVE_REPO_NAME_KEY);
+      if (!activeId || !activeName) {
         setRecentProjects([]);
         return;
       }
-      setRecentProjects([{ name, path: filePath, lastOpened: null }]);
+      setRecentProjects([{ id: activeId, name: activeName, description: null, lastOpened: null }]);
     } catch {
       setRecentProjects([]);
     }
-  }, [PROJECT_FILE_NAME_KEY, PROJECT_FILE_PATH_KEY, RECENT_PROJECTS_KEY]);
+  }, [ACTIVE_REPO_ID_KEY, ACTIVE_REPO_NAME_KEY, RECENT_REPOSITORIES_KEY]);
 
 
   React.useEffect(() => {
-    readRecentProjects();
-    const onStatus = () => readRecentProjects();
+    void readRecentProjects();
+    const onStatus = () => {
+      void readRecentProjects();
+    };
     window.addEventListener(PROJECT_STATUS_EVENT, onStatus as EventListener);
     window.addEventListener('storage', onStatus as EventListener);
     return () => {
@@ -498,6 +587,35 @@ const FirstLaunch: React.FC = () => {
       window.removeEventListener('storage', onStatus as EventListener);
     };
   }, [PROJECT_STATUS_EVENT, readRecentProjects]);
+
+  React.useEffect(() => {
+    const legacyPath = resolveLegacyProjectPath();
+    setLegacyImportAvailable(Boolean(legacyPath));
+  }, [resolveLegacyProjectPath]);
+
+  React.useEffect(() => {
+    if (!window.eaDesktop?.consumePendingRepositoryImports) return;
+
+    const consumePending = async () => {
+      const res = await window.eaDesktop?.consumePendingRepositoryImports();
+      if (!res || !res.ok) return;
+      for (const item of res.items || []) {
+        try {
+          await importRepositoryPackage(item.content, item.name);
+        } catch {
+          // Best-effort only.
+        }
+      }
+    };
+
+    void consumePending();
+
+    if (window.eaDesktop?.onRepositoryPackageImport) {
+      window.eaDesktop.onRepositoryPackageImport((payload) => {
+        void importRepositoryPackage(payload.content, payload.name);
+      });
+    }
+  }, [importRepositoryPackage]);
 
   return (
     <div style={{ height: '100vh' }}>
@@ -516,7 +634,7 @@ const FirstLaunch: React.FC = () => {
           >
             <Card
               style={{ width: 640, maxWidth: '100%' }}
-              title="Enterprise Architecture Project Hub"
+              title="Enterprise Architecture Repository Hub"
               bodyStyle={{ padding: 12 }}
             >
               <div
@@ -533,25 +651,31 @@ const FirstLaunch: React.FC = () => {
                         Start
                       </Typography.Title>
                       <Typography.Paragraph type="secondary" style={{ marginBottom: 4, fontSize: 12 }}>
-                        Create or open a project to begin modeling.
+                        Create or open a repository to begin modeling.
                       </Typography.Paragraph>
 
                       <Button type="primary" onClick={() => setMode('create')}>
-                        Create New Architecture Project
+                        Create New Architecture Repository
                       </Button>
 
                       <Button onClick={handleOpenProject}>
-                        Open Existing Project
+                        Open Repository
                       </Button>
 
+                      {legacyImportAvailable ? (
+                        <Button onClick={handleLegacyImport} loading={legacyImporting}>
+                          Import into Repository Store
+                        </Button>
+                      ) : null}
+
                       <Button onClick={() => importFileInputRef.current?.click()}>
-                        Import Project
+                        Import Repository
                       </Button>
 
                       <input
                         ref={importFileInputRef}
                         type="file"
-                        accept="application/json,.json"
+                        accept="application/octet-stream,.eaproj"
                         style={{ display: 'none' }}
                         onChange={(e) => {
                           void onImportFileSelected(e.target.files?.[0]);
@@ -562,10 +686,10 @@ const FirstLaunch: React.FC = () => {
                   ) : (
                     <>
                       <Typography.Title level={5} style={{ margin: 0, fontSize: 16 }}>
-                        New Architecture Project
+                        New Architecture Repository
                       </Typography.Title>
                       <Typography.Paragraph type="secondary" style={{ marginBottom: 6, fontSize: 12 }}>
-                        Create a project shell (metadata only). No architecture elements will be created.
+                        Create a repository shell (metadata only). No architecture elements will be created.
                       </Typography.Paragraph>
                       <Form
                         form={form}
@@ -621,72 +745,52 @@ const FirstLaunch: React.FC = () => {
                               // If the project already exists or API is unavailable, continue.
                             }
 
-                            // Reference-framework behavior: ArchiMate and TOGAF repositories start empty (no preloaded diagrams/views).
-                            if (values.referenceFramework !== 'ArchiMate' && values.referenceFramework !== 'TOGAF') {
-                              if (values.architectureScope === 'Enterprise') {
-                                try {
-                                  seedDefaultViewsForEnterpriseScope();
-                                } catch {
-                                  // Best-effort only.
-                                }
-                              }
+                            // Views are created explicitly by the user. No auto-seeding.
 
-                              if (values.architectureScope === 'Domain') {
-                                try {
-                                  seedDefaultViewsForDomainScope();
-                                } catch {
-                                  // Best-effort only.
-                                }
-                              }
-
-                              if (values.architectureScope === 'Programme') {
-                                try {
-                                  seedDefaultViewsForProgrammeScope();
-                                } catch {
-                                  // Best-effort only.
-                                }
-                              }
-                            }
+                            const repositoryId = uuid();
+                            updateProjectStatus({
+                              repositoryId,
+                              repositoryName: values.repositoryName,
+                              dirty: false,
+                            });
 
                             const payload = await buildProjectPayload();
                             if (!payload) {
-                              message.error('Failed to create project file.');
+                              message.error('Failed to create repository data.');
                               return;
                             }
 
-                            if (!window.eaDesktop?.saveProject) {
-                              message.info('Project file creation is available in the desktop app.');
+                            if (!window.eaDesktop?.saveManagedRepository) {
+                              message.info('Managed repositories are available in the desktop app.');
                               return;
                             }
 
-                            const suggestedName = `ea-project-${safeSlug(values.repositoryName)}.eaproj`;
-                            const saveRes = await window.eaDesktop.saveProject({
+                            const saveRes = await window.eaDesktop.saveManagedRepository({
                               payload,
-                              suggestedName,
-                              saveAs: true,
+                              repositoryId,
                             });
 
                             if (!saveRes.ok) {
                               message.error(saveRes.error);
                               return;
                             }
-                            if (saveRes.canceled) return;
-                            const savedPath = saveRes.filePath ?? null;
-                            updateProjectStatus({ filePath: savedPath, dirty: false });
-                            updateRecentProjects({ name: values.repositoryName, path: savedPath });
 
+                            const description = values.organizationName
+                              ? `${values.organizationName} EA repository`
+                              : null;
+                            updateRecentProjects({ id: saveRes.repositoryId ?? repositoryId, name: values.repositoryName, description });
                             history.push('/workspace');
                           })();
 
-                      message.success('Project created.');
+                      message.success('Repository created.');
                     }}
                   >
                     <Form.Item
-                      label="Project Name"
+                      label="Repository Name"
                       name="repositoryName"
                       rules={[{ required: true, whitespace: true, message: 'Repository Name is required.' }]}
                     >
-                      <Input placeholder="e.g. Tata Group EA Project" />
+                      <Input placeholder="e.g. Tata Group EA Repository" />
                     </Form.Item>
 
                     <Form.Item
@@ -759,7 +863,7 @@ const FirstLaunch: React.FC = () => {
                     <Space style={{ display: 'flex', justifyContent: 'space-between' }}>
                       <Button onClick={() => setMode('home')}>Back</Button>
                       <Button type="primary" htmlType="submit">
-                        Create Project
+                        Create Repository
                       </Button>
                     </Space>
                   </Form>
@@ -768,7 +872,7 @@ const FirstLaunch: React.FC = () => {
             </div>
             <div>
               <Typography.Title level={5} style={{ margin: 0, fontSize: 16 }}>
-                Recent Projects
+                Recent Repositories
               </Typography.Title>
               <div
                 style={{
@@ -784,7 +888,7 @@ const FirstLaunch: React.FC = () => {
                   <Space direction="vertical" size={12} style={{ width: '100%' }}>
                     {recentProjects.map((item) => (
                       <button
-                        key={`${item.name}-${item.path ?? 'unknown'}`}
+                        key={`${item.id}-${item.name}`}
                         type="button"
                         onClick={() => void handleOpenRecentProject(item)}
                         style={{
@@ -794,13 +898,13 @@ const FirstLaunch: React.FC = () => {
                           background: '#fff',
                           padding: 12,
                           width: '100%',
-                          cursor: item.path ? 'pointer' : 'default',
+                          cursor: 'pointer',
                         }}
                       >
                         <Typography.Text strong>{item.name}</Typography.Text>
-                        {item.path ? (
+                        {item.description ? (
                           <Typography.Text type="secondary" style={{ fontSize: 12, display: 'block' }}>
-                            {item.path}
+                            {item.description}
                           </Typography.Text>
                         ) : null}
                         {item.lastOpened ? (
@@ -812,7 +916,7 @@ const FirstLaunch: React.FC = () => {
                     ))}
                   </Space>
                 ) : (
-                  <Empty description="No recent projects yet." />
+                  <Empty description="No recent repositories yet." />
                 )}
               </div>
             </div>

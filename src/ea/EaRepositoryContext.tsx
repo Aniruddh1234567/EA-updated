@@ -25,6 +25,16 @@ import {
 import { RELATIONSHIP_TYPE_DEFINITIONS } from '@/pages/dependency-view/utils/eaMetaModel';
 import { getCurrentUserOrThrow } from '@/repository/currentUser';
 import { ENABLE_RBAC, validateExclusiveRoleBindings, type RepositoryRoleBinding } from '@/repository/accessControl';
+import { ViewStore } from '@/diagram-studio/view-runtime/ViewStore';
+import { ViewLayoutStore } from '@/diagram-studio/view-runtime/ViewLayoutStore';
+import { DesignWorkspaceStore, type DesignWorkspace } from '@/ea/DesignWorkspaceStore';
+import {
+  REPOSITORY_SNAPSHOT_STORAGE_KEY,
+  type RepositorySnapshot,
+  readRepositorySnapshot,
+  writeRepositorySnapshot,
+} from '@/repository/repositorySnapshotStore';
+import type { ViewInstance } from '@/diagram-studio/viewpoints/ViewInstance';
 
 import { buildGovernanceDebt } from './governanceValidation';
 import { appendGovernanceLog } from './governanceLog';
@@ -51,10 +61,29 @@ export type EaRepositoryContextValue = {
 
 const EaRepositoryContext = React.createContext<EaRepositoryContextValue | undefined>(undefined);
 
-const STORAGE_KEY = 'ea.repository.snapshot.v1';
+const STORAGE_KEY = REPOSITORY_SNAPSHOT_STORAGE_KEY;
 const PROJECT_DIRTY_KEY = 'ea.project.dirty';
 const PROJECT_STATUS_EVENT = 'ea:projectStatusChanged';
+const ACTIVE_REPO_ID_KEY = 'ea.repository.activeId';
+const ACTIVE_REPO_NAME_KEY = 'ea.repository.activeName';
 const HISTORY_LIMIT = 50;
+
+const safeParseJson = <T,>(raw: string | null, fallback: T): T => {
+  if (!raw) return fallback;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return fallback;
+  }
+};
+
+const readLocalStorage = (key: string): string | null => {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+};
 
 const stableStringify = (value: unknown): string => {
   if (value === null) return 'null';
@@ -69,6 +98,33 @@ const stableStringify = (value: unknown): string => {
   const obj = value as Record<string, unknown>;
   const keys = Object.keys(obj).sort((a, b) => a.localeCompare(b));
   return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringify(obj[k])}`).join(',')}}`;
+};
+
+const hasRepositoryChanges = (prev: EaRepository | null, next: EaRepository | null): boolean => {
+  if (!prev || !next) return false;
+
+  if (prev.objects.size !== next.objects.size) return true;
+  if (prev.relationships.length !== next.relationships.length) return true;
+
+  for (const [id, obj] of prev.objects) {
+    const nextObj = next.objects.get(id);
+    if (!nextObj) return true;
+    if (obj.type !== nextObj.type) return true;
+    const attrsA = stableStringify(obj.attributes ?? {});
+    const attrsB = stableStringify(nextObj.attributes ?? {});
+    if (attrsA !== attrsB) return true;
+  }
+
+  const normalizeRel = (r: { fromId: string; toId: string; type: string; attributes?: Record<string, unknown> }) =>
+    stableStringify({ fromId: r.fromId, toId: r.toId, type: r.type, attributes: r.attributes ?? {} });
+
+  const prevRels = prev.relationships.map(normalizeRel).sort();
+  const nextRels = next.relationships.map(normalizeRel).sort();
+  for (let i = 0; i < prevRels.length; i += 1) {
+    if (prevRels[i] !== nextRels[i]) return true;
+  }
+
+  return false;
 };
 
 const hasReadOnlyObjectChanges = (
@@ -318,30 +374,22 @@ const freezeMetadata = (metadata: EaRepositoryMetadata): EaRepositoryMetadata =>
   return Object.freeze({ ...metadata });
 };
 
-type SerializedRepository = {
-  version: 1;
-  metadata: EaRepositoryMetadata;
-  objects: EaObject[];
-  relationships: EaRelationship[];
-  updatedAt: string;
-};
+type SerializedRepository = RepositorySnapshot;
 
 const rbacStorageKey = (repositoryName: string) => `ea.rbac.bindings.${repositoryName}`;
 
 const ensureOwnerBinding = (metadata: EaRepositoryMetadata): { ok: true; bindings: RepositoryRoleBinding[] } | { ok: false; error: string } => {
   const key = rbacStorageKey(metadata.repositoryName);
-  if (!ENABLE_RBAC) {
-    return { ok: true, bindings: [{ userId: metadata.owner.userId, role: 'Owner' }] };
-  }
   try {
     const raw = localStorage.getItem(key);
     const existing: RepositoryRoleBinding[] = raw ? (JSON.parse(raw) as RepositoryRoleBinding[]) : [];
     const dedup = new Map<string, RepositoryRoleBinding>();
     // Always include owner binding from metadata even if storage is empty/unwritable.
-    dedup.set(metadata.owner.userId, { userId: metadata.owner.userId, role: 'Owner' });
+    dedup.set(`${metadata.owner.userId}::Owner`, { userId: metadata.owner.userId, role: 'Owner' });
+    dedup.set(`${metadata.owner.userId}::Architect`, { userId: metadata.owner.userId, role: 'Architect' });
     for (const b of existing) {
       if (!b?.userId || !b?.role) continue;
-      dedup.set(b.userId, { userId: b.userId, role: b.role });
+      dedup.set(`${b.userId}::${b.role}`, { userId: b.userId, role: b.role });
     }
     const bindings = Array.from(dedup.values());
     const validation = validateExclusiveRoleBindings(bindings);
@@ -359,9 +407,6 @@ const ensureOwnerBinding = (metadata: EaRepositoryMetadata): { ok: true; binding
 };
 
 const validateCurrentUserBinding = (metadata: EaRepositoryMetadata): { ok: true } | { ok: false; error: string } => {
-  if (!ENABLE_RBAC) {
-    return { ok: true };
-  }
   let currentUserId: string;
   try {
     currentUserId = getCurrentUserOrThrow().id;
@@ -373,19 +418,20 @@ const validateCurrentUserBinding = (metadata: EaRepositoryMetadata): { ok: true 
     const raw = localStorage.getItem(rbacStorageKey(metadata.repositoryName));
     const stored: RepositoryRoleBinding[] = raw ? (JSON.parse(raw) as RepositoryRoleBinding[]) : [];
     const dedup = new Map<string, RepositoryRoleBinding>();
-    // Always include owner from metadata to avoid failures when storage was empty.
-    dedup.set(metadata.owner.userId, { userId: metadata.owner.userId, role: 'Owner' });
+    // Always include owner + architect from metadata to avoid failures when storage was empty.
+    dedup.set(`${metadata.owner.userId}::Owner`, { userId: metadata.owner.userId, role: 'Owner' });
+    dedup.set(`${metadata.owner.userId}::Architect`, { userId: metadata.owner.userId, role: 'Architect' });
     for (const b of stored) {
       if (!b?.userId || !b?.role) continue;
-      dedup.set(b.userId, { userId: b.userId, role: b.role });
+      dedup.set(`${b.userId}::${b.role}`, { userId: b.userId, role: b.role });
     }
     const bindings = Array.from(dedup.values());
     const validation = validateExclusiveRoleBindings(bindings);
     if (!validation.ok) return { ok: false, error: validation.error };
 
     const roleCount = bindings.filter((b) => b.userId === currentUserId).length;
-    if (roleCount !== 1) {
-      return { ok: false, error: 'RBAC inconsistency: current user must have exactly one role for this repository.' };
+    if (roleCount < 1) {
+      return { ok: false, error: 'RBAC inconsistency: current user must have at least one role for this repository.' };
     }
     const ownerExists = bindings.some((b) => b.role === 'Owner');
     if (!ownerExists) {
@@ -398,6 +444,14 @@ const validateCurrentUserBinding = (metadata: EaRepositoryMetadata): { ok: true 
 };
 
 const serializeRepository = (repo: EaRepository, metadata: EaRepositoryMetadata): SerializedRepository => {
+  const repositoryName = metadata.repositoryName || 'default';
+  const existingSnapshot = readRepositorySnapshot();
+  const isSameRepository = existingSnapshot?.metadata?.repositoryName === metadata.repositoryName;
+
+  const views = isSameRepository ? ViewStore.list() : [];
+  const viewLayouts = isSameRepository ? ViewLayoutStore.listAll() : {};
+  const designWorkspaces = isSameRepository ? DesignWorkspaceStore.list(repositoryName) : [];
+
   return {
     version: 1,
     metadata,
@@ -409,13 +463,25 @@ const serializeRepository = (repo: EaRepository, metadata: EaRepositoryMetadata)
       type: r.type,
       attributes: { ...(r.attributes ?? {}) },
     })),
+    views,
+    studioState: {
+      viewLayouts,
+      designWorkspaces,
+    },
     updatedAt: new Date().toISOString(),
   };
 };
 
+const normalizeStudioState = (value: unknown): RepositorySnapshot['studioState'] => {
+  const asAny = value as any;
+  const viewLayouts = asAny?.viewLayouts && typeof asAny.viewLayouts === 'object' ? (asAny.viewLayouts as Record<string, Record<string, { x: number; y: number }>>) : {};
+  const designWorkspaces = Array.isArray(asAny?.designWorkspaces) ? (asAny.designWorkspaces as DesignWorkspace[]) : [];
+  return { viewLayouts, designWorkspaces };
+};
+
 const tryDeserializeRepository = (
   value: unknown,
-): { ok: true; repo: EaRepository; metadata: EaRepositoryMetadata } | { ok: false; error: string } => {
+): { ok: true; repo: EaRepository; metadata: EaRepositoryMetadata; snapshot: SerializedRepository } | { ok: false; error: string } => {
   const asAny = value as any;
 
   const metaRes = validateRepositoryMetadata(asAny?.metadata);
@@ -478,9 +544,22 @@ const tryDeserializeRepository = (
     }
   }
 
+  const views = Array.isArray(asAny?.views) ? (asAny.views as ViewInstance[]) : [];
+  const studioState = normalizeStudioState(asAny?.studioState);
+  const updatedAt = typeof asAny?.updatedAt === 'string' ? asAny.updatedAt : new Date().toISOString();
+
   try {
     const repo = new EaRepository({ objects, relationships });
-    return { ok: true, repo, metadata: metaRes.metadata };
+    const snapshot: SerializedRepository = {
+      version: 1,
+      metadata: metaRes.metadata,
+      objects,
+      relationships,
+      views,
+      studioState,
+      updatedAt,
+    };
+    return { ok: true, repo, metadata: metaRes.metadata, snapshot };
   } catch (e: any) {
     return { ok: false, error: e?.message || 'Failed to load repository snapshot.' };
   }
@@ -560,8 +639,84 @@ export const EaRepositoryProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const lastAdvisorySaveWarnKeyRef = React.useRef<string | null>(null);
   const lastAdvisoryGovernanceWarnKeyRef = React.useRef<string | null>(null);
 
+  const managedSaveTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const lastStrictActionBlockedKeyRef = React.useRef<string | null>(null);
   const strictActionBlockedModalRef = React.useRef<{ destroy: () => void } | null>(null);
+
+  const ensureActiveRepositoryId = React.useCallback((repositoryName: string) => {
+    let id = readLocalStorage(ACTIVE_REPO_ID_KEY);
+    if (id) return id;
+    const uuid = typeof globalThis.crypto?.randomUUID === 'function'
+      ? globalThis.crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    try {
+      localStorage.setItem(ACTIVE_REPO_ID_KEY, uuid);
+      localStorage.setItem(ACTIVE_REPO_NAME_KEY, repositoryName || 'Repository');
+    } catch {
+      // Best-effort only.
+    }
+    try {
+      window.dispatchEvent(new Event(PROJECT_STATUS_EVENT));
+    } catch {
+      // ignore
+    }
+    return uuid;
+  }, []);
+
+  const buildManagedRepositoryPayload = React.useCallback(() => {
+    if (!eaRepository || !metadata) return null;
+
+    const repositorySnapshot = serializeRepository(eaRepository, metadata);
+    const views = repositorySnapshot.views ?? [];
+    const viewLayouts = repositorySnapshot.studioState?.viewLayouts ?? {};
+
+    const repositoryName = metadata.repositoryName || 'default';
+    const designWorkspaces = repositorySnapshot.studioState?.designWorkspaces ?? DesignWorkspaceStore.list(repositoryName);
+    const repositoryId = readLocalStorage(ACTIVE_REPO_ID_KEY) || undefined;
+
+    const studioState = {
+      ideLayout: {
+        activity: readLocalStorage('ide.activity'),
+        sidebarOpen: readLocalStorage('ide.sidebar.open'),
+        sidebarWidth: readLocalStorage('ide.sidebar.width'),
+        bottomOpen: readLocalStorage('ide.bottom.open'),
+        bottomHeight: readLocalStorage('ide.bottom.height'),
+        panelDock: readLocalStorage('ide.panel.dock'),
+        rightPanelWidth: readLocalStorage('ide.panel.right.width'),
+      },
+      preferences: {
+        applicationGrouping: readLocalStorage('ea.applicationGrouping'),
+        programmeScopeShowTechnology: readLocalStorage('ea.programmeScope.showTechnology'),
+        seedBannerDismissed: readLocalStorage('ea.seed.banner.dismissed'),
+        catalogDefined: readLocalStorage('ea.catalogDefined'),
+      },
+      viewLayouts,
+      designWorkspaces,
+    };
+
+    return {
+      version: 1 as const,
+      meta: {
+        createdAt: metadata.createdAt,
+        updatedAt: new Date().toISOString(),
+        repositoryId,
+        repositoryName: metadata.repositoryName,
+        organizationName: metadata.organizationName,
+        referenceFramework: metadata.referenceFramework,
+        timeHorizon: metadata.timeHorizon,
+      },
+      repository: {
+        metadata,
+        metamodel: metadata.frameworkConfig ?? null,
+        snapshot: repositorySnapshot,
+      },
+      views: {
+        items: views,
+      },
+      studioState,
+    };
+  }, [eaRepository, metadata]);
 
   const initializationState = React.useMemo(() => {
     if (!eaRepository) {
@@ -668,9 +823,13 @@ export const EaRepositoryProvider: React.FC<{ children: React.ReactNode }> = ({ 
       }
 
       // Governance mode:
+      // - Advisory: read-only; block all repository mutations.
       // - Strict: block the update ("block save") when governance violations exist.
-      // - Advisory: allow but warn.
-      if ((metadata?.governanceMode ?? 'Advisory') === 'Strict') {
+      if (governanceMode === 'Advisory') {
+        if (hasRepositoryChanges(prev, next)) {
+          return { ok: false, error: 'Read-only (Advisory mode): repository changes are disabled.' } as const;
+        }
+      } else if (governanceMode === 'Strict') {
         const strict = validateStrictGovernance(next, {
           governanceMode: 'Strict',
           lifecycleCoverage: metadata?.lifecycleCoverage ?? 'As-Is',
@@ -844,9 +1003,10 @@ export const EaRepositoryProvider: React.FC<{ children: React.ReactNode }> = ({ 
       setCanRedo(false);
 
       try {
-        const serialized = JSON.stringify(serializeRepository(res.repo, res.metadata));
+        const serialized = JSON.stringify(res.snapshot);
         lastSerializedRef.current = serialized;
         suppressHistoryRef.current = true;
+        writeRepositorySnapshot(res.snapshot);
       } catch {
         lastSerializedRef.current = null;
       }
@@ -883,10 +1043,13 @@ export const EaRepositoryProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
     const repo = new EaRepository();
 
-    // Persist initial RBAC binding for owner in local storage (UI uses same store).
+    // Persist initial RBAC bindings for owner + architect in local storage (UI uses same store).
     try {
       const key = `ea.rbac.bindings.${metaRes.metadata.repositoryName}`;
-      const initial = [{ userId: metaRes.metadata.owner.userId, role: 'Owner' as const }];
+      const initial = [
+        { userId: metaRes.metadata.owner.userId, role: 'Owner' as const },
+        { userId: metaRes.metadata.owner.userId, role: 'Architect' as const },
+      ];
       localStorage.setItem(key, JSON.stringify(initial));
     } catch {
       // Best-effort only; owner still captured in metadata.
@@ -947,6 +1110,7 @@ export const EaRepositoryProvider: React.FC<{ children: React.ReactNode }> = ({ 
       if (!ownerRes.ok) return false;
       const consistency = validateCurrentUserBinding(res.metadata);
       if (!consistency.ok) return false;
+      writeRepositorySnapshot(res.snapshot);
       suppressHistoryRef.current = true;
       setEaRepositoryUnsafe(res.repo);
       setMetadata(freezeMetadata(res.metadata));
@@ -1006,6 +1170,10 @@ export const EaRepositoryProvider: React.FC<{ children: React.ReactNode }> = ({ 
     try {
       // Persist only when repository *and* metadata exist.
       if (!eaRepository || !metadata) {
+        if (managedSaveTimerRef.current) {
+          clearTimeout(managedSaveTimerRef.current);
+          managedSaveTimerRef.current = null;
+        }
         localStorage.removeItem(STORAGE_KEY);
         lastSerializedRef.current = null;
         try {
@@ -1017,7 +1185,8 @@ export const EaRepositoryProvider: React.FC<{ children: React.ReactNode }> = ({ 
         return;
       }
 
-      const nextSerialized = JSON.stringify(serializeRepository(eaRepository, metadata));
+      const nextSnapshot = serializeRepository(eaRepository, metadata);
+      const nextSerialized = JSON.stringify(nextSnapshot);
 
       const prevSerialized = lastSerializedRef.current;
       const isDirty = prevSerialized ? prevSerialized !== nextSerialized : true;
@@ -1151,11 +1320,22 @@ export const EaRepositoryProvider: React.FC<{ children: React.ReactNode }> = ({ 
         }
       }
 
-      localStorage.setItem(STORAGE_KEY, nextSerialized);
+      writeRepositorySnapshot(nextSnapshot);
+
+      if (typeof window !== 'undefined' && window.eaDesktop?.saveManagedRepository) {
+        const payload = buildManagedRepositoryPayload();
+        if (payload) {
+          const repositoryId = ensureActiveRepositoryId(metadata.repositoryName || 'Repository');
+          if (managedSaveTimerRef.current) clearTimeout(managedSaveTimerRef.current);
+          managedSaveTimerRef.current = setTimeout(() => {
+            void window.eaDesktop?.saveManagedRepository({ payload, repositoryId });
+          }, 250);
+        }
+      }
     } catch {
       // Ignore persistence errors (e.g., storage quota).
     }
-  }, [eaRepository, loading, metadata]);
+  }, [eaRepository, loading, metadata, buildManagedRepositoryPayload, ensureActiveRepositoryId]);
 
   return (
     <EaRepositoryContext.Provider

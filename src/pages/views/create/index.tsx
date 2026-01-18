@@ -1,6 +1,6 @@
 import { PageContainer, ProFormSelect, ProFormText, ProFormTextArea, StepsForm } from '@ant-design/pro-components';
 import { history, useModel } from '@umijs/max';
-import { Card, Divider, Typography, message } from 'antd';
+import { Button, Card, Divider, Result, Typography, message } from 'antd';
 import React, { useMemo, useState } from 'react';
 
 import { ViewStore } from '@/diagram-studio/view-runtime/ViewStore';
@@ -157,7 +157,31 @@ export const CreateViewWizard: React.FC<CreateViewWizardProps> = ({
 };
 
 const CreateViewWizardPage: React.FC = () => {
-  return <CreateViewWizard />;
+  React.useEffect(() => {
+    try {
+      window.dispatchEvent(new CustomEvent('ea:studio.view.create'));
+    } catch {
+      // Best-effort only.
+    }
+    try {
+      history.replace('/workspace');
+    } catch {
+      // Best-effort only.
+    }
+  }, []);
+
+  return (
+    <Result
+      status="info"
+      title="Opening in Studio"
+      subTitle="Create View is hosted inside Studio."
+      extra={
+        <Button type="primary" onClick={() => history.replace('/workspace')}>
+          Go to Studio
+        </Button>
+      }
+    />
+  );
 };
 
 export default CreateViewWizardPage;

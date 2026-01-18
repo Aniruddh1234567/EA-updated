@@ -802,7 +802,7 @@ const ExportWizard: React.FC = () => {
                   { value: 'Repository', label: 'Repository' },
                   { value: 'View', label: 'View (not CSV-ready)', disabled: true },
                   { value: 'Analysis', label: 'Analysis (not CSV-ready)', disabled: true },
-                  { value: 'FullProject', label: 'Full Project' },
+                  { value: 'FullProject', label: 'Full Repository' },
                 ]}
               />
             </Form.Item>
@@ -1090,14 +1090,14 @@ const InteroperabilityPage: React.FC = () => {
           <Alert
             type="warning"
             showIcon
-            message="No project created"
+            message="No repository created"
             description={
               <Space direction="vertical" size={8}>
                 <Typography.Text>
-                  Create a project first to enable repository import/export.
+                  Create a repository first to enable import/export.
                 </Typography.Text>
                 <Button type="primary" href="/project/create">
-                  Create Project
+                  Create Repository
                 </Button>
               </Space>
             }

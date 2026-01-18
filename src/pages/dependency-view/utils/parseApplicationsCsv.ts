@@ -3,6 +3,8 @@ export type ApplicationsCsvRow = {
   name: string;
   criticality: 'high' | 'medium' | 'low';
   lifecycle: string;
+  lifecycleState: string;
+  _row: number;
 };
 
 export type ApplicationsCsvParseSuccess = {
@@ -107,11 +109,16 @@ export function parseAndValidateApplicationsCsv(csvText: string): ApplicationsCs
   if (rows.length === 0) return { ok: false, errors: ['CSV is empty.'] };
 
   const header = rows[0].map(normalizeHeader);
-  const requiredColumns = ['id', 'name', 'criticality', 'lifecycle'] as const;
+  const requiredColumns = ['id', 'name', 'criticality', 'lifecycle', 'lifecycle_state'] as const;
 
   const indexByColumn = new Map<string, number>();
   header.forEach((h, idx) => {
-    if (h) indexByColumn.set(h, idx);
+    if (!h) return;
+    if (h === 'lifecyclestate' || h === 'lifecycle state' || h === 'lifecycle_state') {
+      if (!indexByColumn.has('lifecycle_state')) indexByColumn.set('lifecycle_state', idx);
+      return;
+    }
+    indexByColumn.set(h, idx);
   });
 
   const missing = requiredColumns.filter((col) => !indexByColumn.has(col));
@@ -135,12 +142,14 @@ export function parseAndValidateApplicationsCsv(csvText: string): ApplicationsCs
     const rawName = (row[indexByColumn.get('name')!] ?? '').trim();
     const rawCriticality = (row[indexByColumn.get('criticality')!] ?? '').trim().toLowerCase();
     const rawLifecycle = (row[indexByColumn.get('lifecycle')!] ?? '').trim();
+    const rawLifecycleState = (row[indexByColumn.get('lifecycle_state')!] ?? '').trim();
 
     const displayRow = r + 1; // 1-based CSV line number
 
     if (!rawId) errors.push(`Row ${displayRow}: id is required.`);
     if (!rawName) errors.push(`Row ${displayRow}: name is required.`);
     if (!rawLifecycle) errors.push(`Row ${displayRow}: lifecycle is required.`);
+    if (!rawLifecycleState) errors.push(`Row ${displayRow}: lifecycle_state is required.`);
 
     if (rawId) {
       if (seenIds.has(rawId)) errors.push(`Row ${displayRow}: duplicate id "${rawId}".`);
@@ -153,12 +162,20 @@ export function parseAndValidateApplicationsCsv(csvText: string): ApplicationsCs
       );
     }
 
-    if (rawId && rawName && rawLifecycle && (rawCriticality === 'high' || rawCriticality === 'medium' || rawCriticality === 'low')) {
+    if (
+      rawId &&
+      rawName &&
+      rawLifecycle &&
+      rawLifecycleState &&
+      (rawCriticality === 'high' || rawCriticality === 'medium' || rawCriticality === 'low')
+    ) {
       applications.push({
         id: rawId,
         name: rawName,
         criticality: rawCriticality,
         lifecycle: rawLifecycle,
+        lifecycleState: rawLifecycleState,
+        _row: displayRow,
       });
     }
   }

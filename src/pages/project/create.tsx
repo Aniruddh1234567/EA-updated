@@ -21,7 +21,7 @@ const CreateEaProjectPage: React.FC = () => {
         description: values.description ?? '',
       });
     } catch (e: any) {
-      setError(e?.message || 'Failed to create project');
+      setError(e?.message || 'Failed to create repository');
     } finally {
       setSubmitting(false);
     }
@@ -33,7 +33,7 @@ const CreateEaProjectPage: React.FC = () => {
         <Space direction="vertical" size={12} style={{ width: '100%' }}>
           <div>
             <Typography.Title level={4} style={{ marginBottom: 0 }}>
-              Create Enterprise Architecture Project
+              Create Enterprise Architecture Repository
             </Typography.Title>
             <Typography.Text type="secondary">
               Create a workspace to start building your repository.
@@ -57,7 +57,7 @@ const CreateEaProjectPage: React.FC = () => {
 
             <Form.Item style={{ marginBottom: 0 }}>
               <Button type="primary" htmlType="submit" loading={submitting}>
-                Create
+                Create Repository
               </Button>
             </Form.Item>
           </Form>

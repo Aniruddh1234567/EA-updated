@@ -22,6 +22,7 @@ const ObjectTableTab: React.FC<ObjectTableTabProps> = ({ id, name, objectType, r
 
   const actor = initialState?.currentUser?.name || initialState?.currentUser?.userid || 'ui';
   const isStrictGovernance = (metadata?.governanceMode ?? 'Advisory') === 'Strict';
+  const isReadOnlyMode = (metadata?.governanceMode ?? 'Advisory') === 'Advisory';
 
   const obj = eaRepository?.objects.get(id) ?? null;
   const attrs = (obj?.attributes ?? {}) as Record<string, unknown>;
@@ -103,7 +104,10 @@ const ObjectTableTab: React.FC<ObjectTableTabProps> = ({ id, name, objectType, r
 
   const persistName = React.useCallback(
     (nextRaw: string) => {
-      if (readOnly) return;
+      if (readOnly || isReadOnlyMode) {
+        if (!readOnly) message.warning('Read-only mode: rename is disabled.');
+        return;
+      }
       if (!eaRepository || !obj) {
         message.error('No repository loaded.');
         return;
@@ -135,12 +139,15 @@ const ObjectTableTab: React.FC<ObjectTableTabProps> = ({ id, name, objectType, r
       const applied = trySetEaRepository(next);
       if (!applied.ok) return;
     },
-    [actor, eaRepository, id, isStrictGovernance, obj, readOnly, trySetEaRepository],
-  );
+      [actor, eaRepository, id, isReadOnlyMode, isStrictGovernance, obj, readOnly, trySetEaRepository],
+    );
 
   const applyEdits = React.useCallback(() => {
-      if (readOnly) return;
-      if (!eaRepository || !obj) {
+    if (readOnly || isReadOnlyMode) {
+      if (!readOnly) message.warning('Read-only mode: edits are disabled.');
+      return;
+    }
+    if (!eaRepository || !obj) {
       message.error('No repository loaded.');
       return;
     }
@@ -176,7 +183,7 @@ const ObjectTableTab: React.FC<ObjectTableTabProps> = ({ id, name, objectType, r
     if (!applied.ok) return;
 
     message.success('Properties updated.');
-  }, [actor, eaRepository, form, id, isStrictGovernance, obj, readOnly, trySetEaRepository]);
+  }, [actor, eaRepository, form, id, isReadOnlyMode, isStrictGovernance, obj, readOnly, trySetEaRepository]);
 
   if (!eaRepository || !obj) {
     return (
@@ -201,16 +208,16 @@ const ObjectTableTab: React.FC<ObjectTableTabProps> = ({ id, name, objectType, r
       <Form form={form} layout="vertical">
         <Form.Item label="Name" name="name" rules={isStrictGovernance ? [{ required: true, whitespace: true }] : []}>
           <Input
-            disabled={readOnly}
+            disabled={readOnly || isReadOnlyMode}
             onChange={(e) => {
-              if (readOnly) return;
+              if (readOnly || isReadOnlyMode) return;
               form.setFieldsValue({ name: e.target.value });
               persistName(e.target.value);
             }}
           />
         </Form.Item>
         <Form.Item label="Description" name="description">
-          <Input.TextArea autoSize={{ minRows: 3, maxRows: 8 }} disabled={readOnly} />
+          <Input.TextArea autoSize={{ minRows: 3, maxRows: 8 }} disabled={readOnly || isReadOnlyMode} />
         </Form.Item>
         <Form.Item label="Element Type">
           <Input value={objectType} disabled style={{ color: 'inherit', backgroundColor: '#fafafa' }} />

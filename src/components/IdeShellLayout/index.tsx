@@ -17,7 +17,7 @@ import {
 } from '@ant-design/icons';
 import { ProCard } from '@ant-design/pro-components';
 import { history, useLocation, useModel } from '@umijs/max';
-import { Alert, Avatar, Button, Empty, Input, Layout, Modal, Tabs, Tooltip, Typography, message, theme } from 'antd';
+import { Alert, Avatar, Button, Collapse, Descriptions, Empty, Input, Layout, Modal, Radio, Space, Tabs, Tag, Tooltip, Typography, message, theme } from 'antd';
 import React from 'react';
 import styles from './style.module.less';
 import CatalogTableTab, { titleForCatalogKind, type CatalogKind } from './CatalogTableTab';
@@ -30,6 +30,7 @@ import PlateauViewerTab from './PlateauViewerTab';
 import RoadmapViewerTab from './RoadmapViewerTab';
 import ArchitectureAgentPanel from './ArchitectureAgentPanel';
 import StudioShell from './StudioShell';
+import CreateViewController from './CreateViewController';
 import { getBaselineById } from '../../../backend/baselines/BaselineStore';
 import { getPlateauById } from '../../../backend/roadmap/PlateauStore';
 import { getRoadmapById } from '../../../backend/roadmap/RoadmapStore';
@@ -45,7 +46,11 @@ import { useEaRepository } from '@/ea/EaRepositoryContext';
 import { validateStrictGovernance } from '@/ea/strictGovernance';
 import { isGapAnalysisAllowedForLifecycleCoverage, isRoadmapAllowedForLifecycleCoverage } from '@/repository/lifecycleCoveragePolicy';
 import { ENABLE_RBAC, hasRepositoryPermission, type RepositoryRole } from '@/repository/accessControl';
-import { DesignWorkspaceStore, type DesignWorkspace } from '@/ea/DesignWorkspaceStore';
+import { DesignWorkspaceStore, type DesignWorkspace, type DesignWorkspaceLayoutEdge, type DesignWorkspaceLayoutNode } from '@/ea/DesignWorkspaceStore';
+import { ViewStore } from '@/diagram-studio/view-runtime/ViewStore';
+import type { ViewInstance } from '@/diagram-studio/viewpoints/ViewInstance';
+import { ViewpointRegistry } from '@/diagram-studio/viewpoints/ViewpointRegistry';
+import { resolveViewScope } from '@/diagram-studio/viewpoints/resolveViewScope';
 
 type ActivityKey =
   | 'explorer'
@@ -119,6 +124,11 @@ type OpenWorkspaceTabArgs =
       viewId: string;
     }
   | {
+      type: 'studio-view';
+      viewId: string;
+      readOnly?: boolean;
+    }
+  | {
       type: 'baseline';
       baselineId: string;
     }
@@ -136,6 +146,8 @@ type IdeShellApi = {
   openRouteTab: (pathname: string) => void;
   openPropertiesPanel: (opts?: { elementId?: string; elementType?: string; dock?: PanelDock; readOnly?: boolean }) => void;
   hierarchyEditingEnabled: boolean;
+  studioMode: boolean;
+  requestStudioViewSwitch: (viewId: string, opts?: { openMode?: 'new' | 'replace'; readOnly?: boolean }) => void;
 };
 
 const IdeShellContext = React.createContext<IdeShellApi | null>(null);
@@ -212,6 +224,190 @@ const WorkspaceEmptyState: React.FC<{ title?: string; description?: string }> = 
   );
 };
 
+const createViewWorkspace = (args: {
+  view: ViewInstance;
+  repositoryName: string;
+  currentUserLabel: string;
+  repositoryUpdatedAt?: string;
+  readOnly?: boolean;
+}): DesignWorkspace => {
+  const now = new Date().toISOString();
+  return {
+    id: `studio-view-${args.view.id}`,
+    repositoryName: args.repositoryName,
+    name: args.view.name,
+    description: args.view.description,
+    status: args.readOnly ? 'COMMITTED' : 'DRAFT',
+    createdBy: args.currentUserLabel,
+    createdAt: args.view.createdAt ?? now,
+    updatedAt: now,
+    repositoryUpdatedAt: args.repositoryUpdatedAt,
+    mode: 'STANDARD',
+    stagedElements: [],
+    stagedRelationships: [],
+    layout: { nodes: [], edges: [] },
+  };
+};
+
+const StudioViewInspector: React.FC<{ view: ViewInstance }> = ({ view }) => {
+  const { eaRepository } = useEaRepository();
+
+  const viewpoint = React.useMemo(() => ViewpointRegistry.get(view.viewpointId), [view.viewpointId]);
+
+  const resolution = React.useMemo(() => {
+    if (!eaRepository) return { elements: [], relationships: [] } as const;
+    try {
+      return resolveViewScope({ view, repository: eaRepository });
+    } catch {
+      return { elements: [], relationships: [] } as const;
+    }
+  }, [eaRepository, view]);
+
+  const elementTypes = React.useMemo(
+    () => Array.from(new Set(resolution.elements.map((el) => el.type))).sort(),
+    [resolution.elements],
+  );
+
+  const relationshipTypes = React.useMemo(
+    () => Array.from(new Set(resolution.relationships.map((rel) => rel.type))).sort(),
+    [resolution.relationships],
+  );
+
+  const filters = React.useMemo(() => (view.layoutMetadata as any)?.filters ?? null, [view]);
+  const filterEntries = React.useMemo(() => {
+    if (!filters || typeof filters !== 'object') return [] as Array<[string, unknown]>;
+    return Object.entries(filters as Record<string, unknown>);
+  }, [filters]);
+
+  return (
+    <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+      <Typography.Text strong>View metadata</Typography.Text>
+      <Descriptions size="small" column={1} bordered>
+        <Descriptions.Item label="Name">{view.name}</Descriptions.Item>
+        <Descriptions.Item label="Viewpoint">{viewpoint?.name ?? view.viewpointId}</Descriptions.Item>
+        <Descriptions.Item label="Status">{view.status}</Descriptions.Item>
+      </Descriptions>
+
+      <Collapse
+        ghost
+        defaultActiveKey={['legend', 'filters']}
+        items={[
+          {
+            key: 'legend',
+            label: 'Legend',
+            children: (
+              <Space direction="vertical" size="small" style={{ width: '100%' }}>
+                <div>
+                  <Typography.Text strong>Element types</Typography.Text>
+                  {elementTypes.length === 0 ? (
+                    <Typography.Text type="secondary">None</Typography.Text>
+                  ) : (
+                    <Space wrap>
+                      {elementTypes.map((type) => (
+                        <Tag key={type}>{type}</Tag>
+                      ))}
+                    </Space>
+                  )}
+                </div>
+                <div>
+                  <Typography.Text strong>Relationship types</Typography.Text>
+                  {relationshipTypes.length === 0 ? (
+                    <Typography.Text type="secondary">None</Typography.Text>
+                  ) : (
+                    <Space wrap>
+                      {relationshipTypes.map((type) => (
+                        <Tag key={type}>{type}</Tag>
+                      ))}
+                    </Space>
+                  )}
+                </div>
+              </Space>
+            ),
+          },
+          {
+            key: 'filters',
+            label: 'Filters',
+            children: filterEntries.length ? (
+              <Descriptions size="small" column={1} bordered>
+                {filterEntries.map(([key, value]) => (
+                  <Descriptions.Item key={key} label={key}>
+                    {typeof value === 'string' ? value : JSON.stringify(value)}
+                  </Descriptions.Item>
+                ))}
+              </Descriptions>
+            ) : (
+              <Typography.Text type="secondary">No saved filters for this view.</Typography.Text>
+            ),
+          },
+        ]}
+      />
+    </Space>
+  );
+};
+
+const StudioViewTab: React.FC<{ viewId: string; readOnly?: boolean }> = ({ viewId, readOnly }) => {
+  const { metadata } = useEaRepository();
+  const { initialState } = useModel('@@initialState');
+  const repositoryName = metadata?.repositoryName || 'default';
+  const currentUserLabel = initialState?.currentUser?.name || initialState?.currentUser?.userid || 'Unknown user';
+
+  const [view, setView] = React.useState<ViewInstance | null>(() => ViewStore.get(viewId) ?? null);
+  const [workspace, setWorkspace] = React.useState<DesignWorkspace | null>(() =>
+    view
+      ? createViewWorkspace({
+          view,
+          repositoryName,
+          currentUserLabel,
+          repositoryUpdatedAt: metadata?.updatedAt,
+          readOnly,
+        })
+      : null,
+  );
+
+  React.useEffect(() => {
+    const refresh = () => setView(ViewStore.get(viewId) ?? null);
+    refresh();
+    window.addEventListener('ea:viewsChanged', refresh);
+    return () => window.removeEventListener('ea:viewsChanged', refresh);
+  }, [viewId]);
+
+  React.useEffect(() => {
+    if (!view) return;
+    setWorkspace((prev) => {
+      if (!prev) {
+        return createViewWorkspace({
+          view,
+          repositoryName,
+          currentUserLabel,
+          repositoryUpdatedAt: metadata?.updatedAt,
+          readOnly,
+        });
+      }
+      return {
+        ...prev,
+        name: view.name,
+        description: view.description,
+        status: readOnly ? 'COMMITTED' : 'DRAFT',
+      };
+    });
+  }, [currentUserLabel, metadata?.updatedAt, readOnly, repositoryName, view]);
+
+  if (!view || !workspace) {
+    return <WorkspaceEmptyState title="View unavailable" description="This view no longer exists." />;
+  }
+
+  return (
+    <StudioShell
+      propertiesPanel={<StudioViewInspector view={view} />}
+      designWorkspace={workspace}
+      onUpdateWorkspace={(next) => setWorkspace(next)}
+      onDeleteWorkspace={() => undefined}
+      onExit={() => undefined}
+      viewContext={{ viewId: view.id, readOnly: Boolean(readOnly) }}
+    />
+  );
+};
+
 const IdeShellLayout: React.FC<IdeShellLayoutProps> = ({ sidebars, children, shellOnly = false }) => {
   const { token } = theme.useToken();
   const location = useLocation();
@@ -236,6 +432,17 @@ const IdeShellLayout: React.FC<IdeShellLayoutProps> = ({ sidebars, children, she
     if (access === 'architect' || access === 'user') return 'Architect';
     return 'Viewer';
   }, [initialState?.currentUser?.access]);
+  const canModel = React.useMemo(
+    () =>
+      hasRepositoryPermission(userRole, 'createElement') ||
+      hasRepositoryPermission(userRole, 'editElement') ||
+      hasRepositoryPermission(userRole, 'createRelationship') ||
+      hasRepositoryPermission(userRole, 'editRelationship'),
+    [userRole],
+  );
+  const canEditView = React.useMemo(() => hasRepositoryPermission(userRole, 'editView'), [userRole]);
+  const governanceStrict = (metadata as any)?.governanceMode === 'Strict';
+  const governanceReadOnly = governanceStrict && !canEditView;
   const currentUserLabel = React.useMemo(() => {
     const name = initialState?.currentUser?.name || initialState?.currentUser?.userid;
     return name && name.trim() ? name.trim() : 'Unknown user';
@@ -267,6 +474,102 @@ const IdeShellLayout: React.FC<IdeShellLayoutProps> = ({ sidebars, children, she
       layout: { nodes: [], edges: [] },
     };
   }, [currentUserLabel, generateWorkspaceId, metadata?.updatedAt, repositoryName]);
+
+  React.useEffect(() => {
+    const onStudioOpen = (event: Event) => {
+      if (!canEnterStudio()) return;
+      const e = event as CustomEvent<{
+        id?: string;
+        name?: string;
+        description?: string;
+        layout?: { nodes?: DesignWorkspaceLayoutNode[]; edges?: DesignWorkspaceLayoutEdge[] } | null;
+      }>;
+      const detail = e.detail ?? {};
+      const now = new Date().toISOString();
+      const layout = detail.layout ?? null;
+      const next: DesignWorkspace = {
+        id: detail.id ?? generateWorkspaceId(),
+        repositoryName,
+        name: (detail.name ?? '').trim() || 'Untitled Workspace',
+        description: detail.description ?? '',
+        status: 'DRAFT',
+        createdBy: currentUserLabel || 'unknown',
+        createdAt: now,
+        updatedAt: now,
+        repositoryUpdatedAt: metadata?.updatedAt,
+        mode: 'STANDARD',
+        stagedElements: [],
+        stagedRelationships: [],
+        layout: {
+          nodes: Array.isArray(layout?.nodes) ? layout!.nodes : [],
+          edges: Array.isArray(layout?.edges) ? layout!.edges : [],
+        },
+      };
+
+      DesignWorkspaceStore.save(repositoryName, next);
+      setActiveWorkspace(next);
+      setStudioMode(true);
+      setPanelMode('properties');
+    };
+
+    window.addEventListener('ea:studio.open', onStudioOpen as EventListener);
+    return () => window.removeEventListener('ea:studio.open', onStudioOpen as EventListener);
+  }, [canEnterStudio, currentUserLabel, generateWorkspaceId, metadata?.updatedAt, repositoryName]);
+
+  React.useEffect(() => {
+    const onStudioViewOpen = (event: Event) => {
+      const e = event as CustomEvent<{ viewId?: string; readOnly?: boolean; replay?: boolean }>;
+      if (e.detail?.replay) return;
+      const viewId = (e.detail?.viewId ?? '').trim();
+      if (!viewId) return;
+      if (!canEnterStudio()) return;
+      if (studioMode) return;
+      setStudioMode(true);
+      setPanelMode('properties');
+      setPropertiesReadOnly(false);
+      setPendingStudioViewOpen({ viewId, readOnly: e.detail?.readOnly });
+    };
+
+    window.addEventListener('ea:studio.view.open', onStudioViewOpen as EventListener);
+    return () => window.removeEventListener('ea:studio.view.open', onStudioViewOpen as EventListener);
+  }, [canEnterStudio, setPanelMode, setPropertiesReadOnly, setStudioMode, studioMode]);
+
+  const triggerCreateView = React.useCallback(() => {
+    window.dispatchEvent(new CustomEvent('ea:studio.view.create'));
+  }, []);
+
+  React.useEffect(() => {
+    if (!studioMode || !pendingStudioViewOpen) return;
+    const { viewId, readOnly } = pendingStudioViewOpen;
+    const view = ViewStore.get(viewId) ?? null;
+    if (view) {
+      const nextWorkspace = createViewWorkspace({
+        view,
+        repositoryName,
+        currentUserLabel,
+        repositoryUpdatedAt: metadata?.updatedAt,
+        readOnly,
+      });
+      DesignWorkspaceStore.save(repositoryName, nextWorkspace);
+      setActiveWorkspace(nextWorkspace);
+    }
+    setPendingStudioViewOpen(null);
+    try {
+      window.dispatchEvent(
+        new CustomEvent('ea:studio.view.open', {
+          detail: {
+            viewId,
+            readOnly,
+            openMode: 'new',
+            replay: true,
+          },
+        }),
+      );
+    } catch {
+      // Best-effort only.
+    }
+  }, [currentUserLabel, metadata?.updatedAt, pendingStudioViewOpen, repositoryName, studioMode]);
+
 
   const cssVars = React.useMemo<React.CSSProperties>(
     () => ({
@@ -356,8 +659,12 @@ const IdeShellLayout: React.FC<IdeShellLayoutProps> = ({ sidebars, children, she
   const [activeKey, setActiveKey] = React.useState<string | null>(null);
   const [panelMode, setPanelMode] = React.useState<'properties' | 'agent'>('properties');
   const [studioMode, setStudioMode] = React.useState(false);
-  const [studioEntryOpen, setStudioEntryOpen] = React.useState(false);
   const [activeWorkspace, setActiveWorkspace] = React.useState<DesignWorkspace | null>(null);
+  const [pendingStudioViewSwitchId, setPendingStudioViewSwitchId] = React.useState<string | null>(null);
+  const [viewSwitchMode, setViewSwitchMode] = React.useState<'read' | 'edit'>(canEditView ? 'edit' : 'read');
+  const [pendingStudioViewOpen, setPendingStudioViewOpen] = React.useState<
+    { viewId: string; readOnly?: boolean } | null
+  >(null);
   const hierarchyEditingEnabled = React.useMemo(() => {
     if (!activeKey) return true;
     if (activeKey.startsWith('baseline:')) return false;
@@ -376,6 +683,7 @@ const IdeShellLayout: React.FC<IdeShellLayoutProps> = ({ sidebars, children, she
   >(null);
 
   React.useEffect(() => {
+    if (pathname.startsWith('/views/')) return;
     // IDE rule: left panel selections / route changes must not replace the active editor
     // unless the current active editor is a route tab (or there are no tabs yet).
     setTabs((prev) => {
@@ -475,6 +783,70 @@ const IdeShellLayout: React.FC<IdeShellLayoutProps> = ({ sidebars, children, she
   }, [panelMode, studioMode]);
 
   React.useEffect(() => {
+    if (studioMode) return;
+    setPendingStudioViewSwitchId(null);
+  }, [studioMode]);
+
+  React.useEffect(() => {
+    if (!pendingStudioViewSwitchId) return;
+    setViewSwitchMode(canEditView ? 'edit' : 'read');
+  }, [canEditView, pendingStudioViewSwitchId]);
+  const requestStudioViewSwitch = React.useCallback(
+    (viewId: string, opts?: { openMode?: 'new' | 'replace'; readOnly?: boolean }) => {
+      if (!viewId) return;
+      if (opts?.openMode) {
+        const readOnly = opts?.readOnly ?? (viewSwitchMode === 'read' || !canEditView);
+        try {
+          window.dispatchEvent(
+            new CustomEvent('ea:studio.view.open', {
+              detail: { viewId, readOnly, openMode: opts.openMode },
+            }),
+          );
+        } catch {
+          // Best-effort only.
+        }
+        return;
+      }
+      setPendingStudioViewSwitchId(viewId);
+      setViewSwitchMode(canEditView ? 'edit' : 'read');
+    },
+    [canEditView, viewSwitchMode],
+  );
+
+  const pendingStudioViewSwitch = React.useMemo(() => {
+    if (!pendingStudioViewSwitchId) return null;
+    const view = ViewStore.get(pendingStudioViewSwitchId) ?? null;
+    const viewpoint = view ? ViewpointRegistry.get(view.viewpointId) : null;
+    return {
+      viewId: pendingStudioViewSwitchId,
+      view,
+      viewpointName: viewpoint?.name ?? view?.viewpointId ?? 'Unknown viewpoint',
+    };
+  }, [pendingStudioViewSwitchId]);
+
+  const clearPendingStudioViewSwitch = React.useCallback(() => {
+    setPendingStudioViewSwitchId(null);
+  }, []);
+
+  const openPendingStudioViewSwitch = React.useCallback(
+    (openMode: 'new' | 'replace') => {
+      if (!pendingStudioViewSwitchId) return;
+      const readOnly = viewSwitchMode === 'read' || !canEditView;
+      try {
+        window.dispatchEvent(
+          new CustomEvent('ea:studio.view.open', {
+            detail: { viewId: pendingStudioViewSwitchId, readOnly, openMode },
+          }),
+        );
+      } catch {
+        // Best-effort only.
+      }
+      setPendingStudioViewSwitchId(null);
+    },
+    [canEditView, pendingStudioViewSwitchId, viewSwitchMode],
+  );
+
+  React.useEffect(() => {
     if (!studioMode) return;
     const list = DesignWorkspaceStore.list(repositoryName);
     if (list.length > 0) {
@@ -524,6 +896,7 @@ const IdeShellLayout: React.FC<IdeShellLayoutProps> = ({ sidebars, children, she
           'applications',
           // Hidden by default in Explorer, but can be enabled later.
           'technologies',
+          'infrastructureServices',
         ]);
         if (!allowed.has(args.catalog)) {
           message.warning(
@@ -539,6 +912,7 @@ const IdeShellLayout: React.FC<IdeShellLayoutProps> = ({ sidebars, children, she
           'businessServices',
           'applications',
           'applicationServices',
+          'interfaces',
         ]);
         if (!allowed.has(args.catalog)) {
           message.warning(
@@ -691,6 +1065,18 @@ const IdeShellLayout: React.FC<IdeShellLayoutProps> = ({ sidebars, children, she
       return;
     }
 
+    if (args.type === 'studio-view') {
+      const sessionId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+      const key = `studio:view:${args.viewId}:${sessionId}`;
+      const view = ViewStore.get(args.viewId);
+      const label = view?.name ? `${view.name} (Studio)` : 'Studio View';
+      const content = <StudioViewTab viewId={args.viewId} readOnly={args.readOnly} />;
+
+      setTabs((prev) => [...prev, { key, label, kind: 'workspace', content }]);
+      setActiveKey(key);
+      return;
+    }
+
     if (args.type === 'baseline') {
       const key = `baseline:${args.baselineId}`;
       const content = <BaselineViewerTab baselineId={args.baselineId} />;
@@ -780,6 +1166,11 @@ const IdeShellLayout: React.FC<IdeShellLayoutProps> = ({ sidebars, children, she
   const openRouteTab = React.useCallback(
     (path: string) => {
       const key = path || '/';
+      if (key === '/views/create') {
+        triggerCreateView();
+        return;
+      }
+
       setTabs((prev) => {
         if (prev.some((t) => t.key === key)) return prev;
         return [...prev, { key, label: titleForPath(key), kind: 'route' }];
@@ -787,8 +1178,13 @@ const IdeShellLayout: React.FC<IdeShellLayoutProps> = ({ sidebars, children, she
       setActiveKey(key);
       if (key.startsWith('/') && key !== pathname) history.push(key);
     },
-    [pathname],
+    [pathname, triggerCreateView],
   );
+
+  React.useEffect(() => {
+    if (!pathname.startsWith('/views/')) return;
+    openRouteTab(pathname);
+  }, [openRouteTab, pathname]);
 
   const [propertiesReadOnly, setPropertiesReadOnly] = React.useState(false);
 
@@ -799,12 +1195,15 @@ const IdeShellLayout: React.FC<IdeShellLayoutProps> = ({ sidebars, children, she
       if (targetId && targetType) {
         setSelectedElement({ id: targetId, type: targetType, source: opts?.dock ? 'Explorer' : selection.selectedSource ?? 'Explorer' });
       }
+      if (studioMode) {
+        setPendingStudioViewSwitchId(null);
+      }
       setPanelMode('properties');
       setPanelDock(opts?.dock ?? 'right');
       setPropertiesReadOnly(Boolean(opts?.readOnly));
       setBottomPanelOpen(true);
     },
-    [selection.selectedElementId, selection.selectedElementType, selection.selectedSource, setSelectedElement, setBottomPanelOpen, setPanelDock, setPanelMode, setPropertiesReadOnly],
+    [selection.selectedElementId, selection.selectedElementType, selection.selectedSource, setSelectedElement, setBottomPanelOpen, setPanelDock, setPanelMode, setPropertiesReadOnly, setPendingStudioViewSwitchId, studioMode],
   );
 
   const closeTab = React.useCallback(
@@ -846,12 +1245,6 @@ const IdeShellLayout: React.FC<IdeShellLayoutProps> = ({ sidebars, children, she
       message.warning('Architecture Studio is unavailable in Baseline / Roadmap / Plateau context.');
       return false;
     }
-
-    const canModel =
-      hasRepositoryPermission(userRole, 'createElement') ||
-      hasRepositoryPermission(userRole, 'editElement') ||
-      hasRepositoryPermission(userRole, 'createRelationship') ||
-      hasRepositoryPermission(userRole, 'editRelationship');
 
     if (!canModel) {
       message.error('Repository is read-only for your role. Modeling is not allowed.');
@@ -1218,8 +1611,15 @@ const IdeShellLayout: React.FC<IdeShellLayoutProps> = ({ sidebars, children, she
   };
 
   const ctxValue = React.useMemo<IdeShellApi>(
-    () => ({ openWorkspaceTab, openRouteTab, openPropertiesPanel, hierarchyEditingEnabled }),
-    [hierarchyEditingEnabled, openWorkspaceTab, openRouteTab, openPropertiesPanel],
+    () => ({
+      openWorkspaceTab,
+      openRouteTab,
+      openPropertiesPanel,
+      hierarchyEditingEnabled,
+      studioMode,
+      requestStudioViewSwitch,
+    }),
+    [hierarchyEditingEnabled, openWorkspaceTab, openRouteTab, openPropertiesPanel, requestStudioViewSwitch, studioMode],
   );
 
   const activeElementId = selection.selectedElementId;
@@ -1266,6 +1666,29 @@ const IdeShellLayout: React.FC<IdeShellLayoutProps> = ({ sidebars, children, she
     );
   }, [activeElementId, activeElementName, activeElementType, panelMode, propertiesReadOnly]);
 
+  const renderStudioPanelBody = React.useCallback(() => {
+    if (panelMode === 'properties') {
+      if (!activeElementId || !activeElementType) {
+        return (
+          <WorkspaceEmptyState
+            title="No element selected"
+            description="Select an element, then choose Open Properties."
+          />
+        );
+      }
+      return (
+        <ObjectTableTab
+          id={activeElementId}
+          name={activeElementName || activeElementId}
+          objectType={activeElementType}
+          readOnly={propertiesReadOnly}
+        />
+      );
+    }
+
+    return <ArchitectureAgentPanel />;
+  }, [activeElementId, activeElementName, activeElementType, panelMode, propertiesReadOnly]);
+
   const exitStudioMode = React.useCallback(() => {
     setStudioMode(false);
     try {
@@ -1282,6 +1705,7 @@ const IdeShellLayout: React.FC<IdeShellLayoutProps> = ({ sidebars, children, she
   return (
     <div className={rootClassName} style={cssVars}>
       <IdeShellContext.Provider value={ctxValue}>
+        <CreateViewController />
         <Layout className={styles.layoutRoot} style={{ background: token.colorBgLayout }}>
           {shouldRenderDesktopHeader ? (
             <div
@@ -1344,29 +1768,35 @@ const IdeShellLayout: React.FC<IdeShellLayoutProps> = ({ sidebars, children, she
                 }}
               >
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: isDesktop ? 6 : 9 }}>
-                  <Tooltip
-                    title={studioEntryDisabled ? 'Architecture Studio unavailable in Baseline / Roadmap / Plateau.' : 'Architecture Studio'}
-                    placement="right"
-                  >
-                    <Button
-                      type="text"
-                      className={styles.activityButton}
-                      aria-label="Architecture Studio"
-                      disabled={studioEntryDisabled}
-                      onClick={() => {
-                        if (!canEnterStudio()) return;
-                        setStudioEntryOpen(true);
-                      }}
-                      style={{
-                        width: activityHitSize,
-                        height: activityHitSize,
-                        minWidth: activityHitSize,
-                        color: studioMode ? token.colorWarning : token.colorTextSecondary,
-                        border: studioMode ? `1px solid ${token.colorWarning}` : '1px solid transparent',
-                      }}
-                      icon={<BuildOutlined style={{ fontSize: activityIconSize }} />}
-                    />
-                  </Tooltip>
+                  {canModel ? (
+                    <Tooltip
+                      title={
+                        studioEntryDisabled ? 'Architecture Studio unavailable in Baseline / Roadmap / Plateau.' : 'Architecture Studio'
+                      }
+                      placement="right"
+                    >
+                      <Button
+                        type="text"
+                        className={styles.activityButton}
+                        aria-label="Architecture Studio"
+                        disabled={studioEntryDisabled}
+                        onClick={() => {
+                          if (!canEnterStudio()) return;
+                          setStudioMode(true);
+                          setPanelMode('properties');
+                          setPropertiesReadOnly(false);
+                        }}
+                        style={{
+                          width: activityHitSize,
+                          height: activityHitSize,
+                          minWidth: activityHitSize,
+                          color: studioMode ? token.colorWarning : token.colorTextSecondary,
+                          border: studioMode ? `1px solid ${token.colorWarning}` : '1px solid transparent',
+                        }}
+                        icon={<BuildOutlined style={{ fontSize: activityIconSize }} />}
+                      />
+                    </Tooltip>
+                  ) : null}
                   {ACTIVITY_ITEMS.filter((i) => i.key !== 'settings').map((item) => {
                     const selected = item.key === activity;
                     return (
@@ -1569,7 +1999,81 @@ const IdeShellLayout: React.FC<IdeShellLayoutProps> = ({ sidebars, children, she
                   {studioMode ? (
                     activeWorkspace ? (
                       <StudioShell
-                        propertiesPanel={renderPanelBody()}
+                        propertiesPanel={renderStudioPanelBody()}
+                        onRequestProperties={clearPendingStudioViewSwitch}
+                        onRequestCloseViewSwitch={clearPendingStudioViewSwitch}
+                        viewSwitchPanel={
+                          pendingStudioViewSwitch ? (
+                            <Space direction="vertical" style={{ width: '100%' }} size="middle">
+                              <div>
+                                <Typography.Text strong>Switch to a saved view</Typography.Text>
+                                <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+                                  Review the view details below, then open it in Studio.
+                                </Typography.Paragraph>
+                              </div>
+
+                              {pendingStudioViewSwitch.view ? (
+                                <Descriptions column={1} bordered size="small">
+                                  <Descriptions.Item label="View name">
+                                    {pendingStudioViewSwitch.view.name}
+                                  </Descriptions.Item>
+                                  <Descriptions.Item label="Viewpoint">
+                                    {pendingStudioViewSwitch.viewpointName}
+                                  </Descriptions.Item>
+                                  <Descriptions.Item label="Status">
+                                    <Tag color="blue">{pendingStudioViewSwitch.view.status}</Tag>
+                                  </Descriptions.Item>
+                                  <Descriptions.Item label="Description">
+                                    {pendingStudioViewSwitch.view.description || 'No description'}
+                                  </Descriptions.Item>
+                                </Descriptions>
+                              ) : (
+                                <Alert
+                                  type="warning"
+                                  showIcon
+                                  message="View not found"
+                                  description="The selected view could not be loaded."
+                                />
+                              )}
+
+                              <div>
+                                <Typography.Text strong>Mode</Typography.Text>
+                                <Radio.Group
+                                  style={{ marginTop: 8 }}
+                                  value={viewSwitchMode}
+                                  onChange={(e) => setViewSwitchMode(e.target.value)}
+                                >
+                                  <Radio.Button value="read">Read-only</Radio.Button>
+                                  <Radio.Button value="edit" disabled={!canEditView}>
+                                    Edit
+                                  </Radio.Button>
+                                </Radio.Group>
+                                {!canEditView ? (
+                                  <Typography.Paragraph type="secondary" style={{ marginBottom: 0, marginTop: 8 }}>
+                                    Edit is disabled for your role.
+                                  </Typography.Paragraph>
+                                ) : null}
+                              </div>
+
+                              <Space>
+                                <Button
+                                  type="primary"
+                                  onClick={() => openPendingStudioViewSwitch('replace')}
+                                  disabled={!pendingStudioViewSwitch.view}
+                                >
+                                  Switch to this view
+                                </Button>
+                                <Button
+                                  onClick={() => openPendingStudioViewSwitch('new')}
+                                  disabled={!pendingStudioViewSwitch.view}
+                                >
+                                  Open in new tab
+                                </Button>
+                                <Button onClick={clearPendingStudioViewSwitch}>Dismiss</Button>
+                              </Space>
+                            </Space>
+                          ) : null
+                        }
                         designWorkspace={activeWorkspace}
                         onUpdateWorkspace={handleUpdateWorkspace}
                         onDeleteWorkspace={handleDeleteWorkspace}
@@ -1799,11 +2303,6 @@ const IdeShellLayout: React.FC<IdeShellLayoutProps> = ({ sidebars, children, she
             </Typography.Text>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: token.marginXXS }}>
-              {studioMode && (
-                <Typography.Text type="warning" style={{ fontSize: 12 }}>
-                  Studio Mode: ON
-                </Typography.Text>
-              )}
               <Button
                 type="text"
                 size="small"
@@ -1816,38 +2315,6 @@ const IdeShellLayout: React.FC<IdeShellLayoutProps> = ({ sidebars, children, she
             </div>
           </Layout.Footer>
         </Layout>
-        <Modal
-          open={studioEntryOpen}
-          title="Enter Architecture Studio"
-          okText="Enter Studio"
-          cancelText="Cancel"
-          onCancel={() => setStudioEntryOpen(false)}
-          onOk={() => {
-            setStudioEntryOpen(false);
-            setStudioMode(true);
-            setPanelMode('properties');
-            setPropertiesReadOnly(false);
-            message.warning('Architecture Studio enabled. Changes here modify architecture model.');
-          }}
-        >
-          <Alert
-            type="warning"
-            showIcon
-            message="Changes here modify architecture model"
-            style={{ marginBottom: 12 }}
-          />
-          <Typography.Paragraph style={{ marginBottom: 8 }}>
-            Studio mode is opt-in. You are entering a powerful mode intended for explicit, confirmed modeling actions.
-          </Typography.Paragraph>
-          <Typography.Text strong>Non-negotiable rules:</Typography.Text>
-          <ul style={{ marginTop: 8, marginBottom: 0, paddingLeft: 18 }}>
-            <li>No element is created implicitly</li>
-            <li>No relationship is inferred</li>
-            <li>Every model change requires explicit confirmation</li>
-            <li>Diagram never mutates model silently</li>
-            <li>Properties panel remains authoritative</li>
-          </ul>
-        </Modal>
       </IdeShellContext.Provider>
     </div>
   );

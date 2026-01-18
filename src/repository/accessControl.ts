@@ -3,20 +3,21 @@
  *
  * Defines top-level roles for a repository.
  *
- * Roles (exclusive per user per repository):
+ * Roles (per user per repository):
  * - Owner: full control over repository metadata, modeling, governance settings, and exports.
  * - Architect: can model (create/update/delete elements and relationships), run analyses, and export; cannot change repository ownership metadata.
  * - Viewer: read-only; can browse, run read-only analyses, and export read-only views if allowed; no mutations.
  *
  * Owners do NOT bypass context locks or validation pipelines; enforcement layers must still run.
  */
-export type RepositoryRole = 'Owner' | 'Architect' | 'Viewer';
+export type RepositoryRole = 'Owner' | 'Architect' | 'Contributor' | 'Viewer';
 
-export const REPOSITORY_ROLES: RepositoryRole[] = ['Owner', 'Architect', 'Viewer'];
+export const REPOSITORY_ROLES: RepositoryRole[] = ['Owner', 'Architect', 'Contributor', 'Viewer'];
 
 export const REPOSITORY_ROLE_DESCRIPTIONS: Record<RepositoryRole, string> = {
   Owner: 'Full control: governance settings, metadata, modeling, and exports.',
   Architect: 'Modeling focus: create/update objects and relationships, author views/layouts; cannot govern, delete baselines, or change ownership.',
+  Contributor: 'Contribution focus: create/update elements and relationships; no deletes, governance, or imports.',
   Viewer: 'Read-only: browse Explorer, properties, impact analysis, views/roadmaps/baselines; no create/edit/delete.',
 };
 
@@ -24,6 +25,7 @@ export const REPOSITORY_ROLE_DESCRIPTIONS: Record<RepositoryRole, string> = {
  * TEMPORARY FEATURE FLAG: disable RBAC while keeping the model intact.
  * RBAC temporarily disabled via feature flag. Do not remove RBAC logic.
  * Re-enable by setting ENABLE_RBAC = true.
+ * NOTE: Role bindings are still stored/validated to preserve data compatibility for future multi-user support.
  */
 export const ENABLE_RBAC = false;
 
@@ -40,19 +42,16 @@ export type RepositoryRoleBinding = {
 export const validateExclusiveRoleBindings = (
   bindings: RepositoryRoleBinding[],
 ): { ok: true } | { ok: false; error: string } => {
-  if (!ENABLE_RBAC) {
-    // RBAC bypassed: reject role-binding attempts to avoid mixed states.
-    return { ok: false, error: 'RBAC is disabled (single-user mode).' };
-  }
   const seen = new Set<string>();
   for (const b of bindings) {
     if (!b?.userId || !isRepositoryRole(b?.role)) {
       return { ok: false, error: 'Invalid role binding.' };
     }
-    if (seen.has(b.userId)) {
-      return { ok: false, error: `User ${b.userId} cannot hold multiple roles for the same repository.` };
+    const key = `${b.userId}::${b.role}`;
+    if (seen.has(key)) {
+      return { ok: false, error: `Duplicate role binding for ${b.userId} (${b.role}).` };
     }
-    seen.add(b.userId);
+    seen.add(key);
   }
   return { ok: true };
 };
@@ -107,6 +106,17 @@ const ARCHITECT_PERMISSIONS: ReadonlySet<RepositoryPermission> = new Set([
   // Explicitly excluded: initializeEnterprise, deleteBaseline.
 ]);
 
+const CONTRIBUTOR_PERMISSIONS: ReadonlySet<RepositoryPermission> = new Set([
+  'createElement',
+  'editElement',
+  'createRelationship',
+  'editRelationship',
+  'createView',
+  'editView',
+  'impactAnalysis',
+  'read',
+]);
+
 const VIEWER_PERMISSIONS: ReadonlySet<RepositoryPermission> = new Set([
   'impactAnalysis',
   'read',
@@ -116,6 +126,7 @@ const VIEWER_PERMISSIONS: ReadonlySet<RepositoryPermission> = new Set([
 export const ROLE_PERMISSIONS: Record<RepositoryRole, ReadonlySet<RepositoryPermission>> = {
   Owner: OWNER_PERMISSIONS,
   Architect: ARCHITECT_PERMISSIONS,
+  Contributor: CONTRIBUTOR_PERMISSIONS,
   Viewer: VIEWER_PERMISSIONS,
 };
 

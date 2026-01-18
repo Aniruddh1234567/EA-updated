@@ -1,4 +1,5 @@
 import React from 'react';
+import { useModel } from '@umijs/max';
 
 import { ProCard } from '@ant-design/pro-components';
 import { Alert, Button, Divider, Empty, Form, Input, Modal, Select, Space, Spin, Statistic, Table, Tag, Typography, message } from 'antd';
@@ -18,6 +19,7 @@ import { createRoadmap } from '../../../backend/roadmap/RoadmapStore';
 import { useIdeShell } from '@/components/IdeShellLayout';
 import { useEaRepository } from '@/ea/EaRepositoryContext';
 import { useEaProject } from '@/ea/EaProjectContext';
+import { hasRepositoryPermission, type RepositoryRole } from '@/repository/accessControl';
 import { buildGovernanceDebt } from '@/ea/governanceValidation';
 import { clearGovernanceLog, readGovernanceLog, type GovernanceLogEntry } from '@/ea/governanceLog';
 import { getRepositoryAssurance } from '@/services/ea/assurance';
@@ -89,8 +91,45 @@ const statusTag = (s: AssuranceSeverity | 'None') => {
 
 const GovernanceDashboardPage: React.FC = () => {
   const { openWorkspaceTab } = useIdeShell();
+  const { initialState } = useModel('@@initialState');
   const { project } = useEaProject();
-  const { eaRepository, metadata } = useEaRepository();
+  const { eaRepository, metadata, updateRepositoryMetadata } = useEaRepository();
+
+  const userRole: RepositoryRole = React.useMemo(() => {
+    const access = initialState?.currentUser?.access;
+    if (access === 'admin') return 'Owner';
+    if (access === 'architect' || access === 'user') return 'Architect';
+    return 'Viewer';
+  }, [initialState?.currentUser?.access]);
+
+  const canChangeGovernance = hasRepositoryPermission(userRole, 'changeGovernanceMode');
+
+  const handleToggleGovernanceMode = React.useCallback(() => {
+    if (!metadata) return;
+    if (!canChangeGovernance) {
+      message.warning('You do not have permission to change governance mode.');
+      return;
+    }
+    const nextMode = metadata.governanceMode === 'Strict' ? 'Advisory' : 'Strict';
+    Modal.confirm({
+      title: `Switch to ${nextMode} mode?`,
+      okText: 'Confirm',
+      cancelText: 'Cancel',
+      content:
+        nextMode === 'Strict'
+          ? 'Strict mode enables editing but blocks saves/exports on governance violations.'
+          : 'Advisory mode is read-only. Editing, create, rename, and delete are disabled.',
+      onOk: () => {
+        const res = updateRepositoryMetadata({ governanceMode: nextMode });
+        if (!res.ok) {
+          message.error(res.error);
+          return Promise.reject();
+        }
+        message.success(`Governance mode updated to ${nextMode}.`);
+        return Promise.resolve();
+      },
+    });
+  }, [canChangeGovernance, metadata, updateRepositoryMetadata]);
 
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
@@ -668,6 +707,9 @@ const GovernanceDashboardPage: React.FC = () => {
             <Space direction="vertical" size={12} style={{ width: '100%' }}>
               <Space size={24} wrap>
                 <Statistic title="Mode" value={metadata?.governanceMode ?? '—'} />
+                <Button onClick={handleToggleGovernanceMode} disabled={!metadata || !canChangeGovernance}>
+                  {metadata?.governanceMode === 'Strict' ? 'Switch to Advisory (read-only)' : 'Switch to Strict (enable editing)'}
+                </Button>
                 {isDraftModeling ? (
                   <Tag color="gold">Draft modeling: counts hidden</Tag>
                 ) : (

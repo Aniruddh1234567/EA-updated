@@ -14,11 +14,18 @@ export type CatalogKind =
   | 'departments'
   | 'applications'
   | 'applicationServices'
+  | 'interfaces'
+  | 'nodes'
+  | 'compute'
+  | 'runtime'
+  | 'databases'
+  | 'infrastructureServices'
   | 'technologies'
   | 'programmes'
   | 'projects'
   | 'principles'
-  | 'requirements';
+  | 'requirements'
+  | 'standards';
 
 export const titleForCatalogKind = (kind: CatalogKind) => {
   switch (kind) {
@@ -36,8 +43,20 @@ export const titleForCatalogKind = (kind: CatalogKind) => {
       return 'Applications';
     case 'applicationServices':
       return 'Application Services';
+    case 'interfaces':
+      return 'Interfaces';
+    case 'nodes':
+      return 'Nodes';
+    case 'compute':
+      return 'Compute';
+    case 'runtime':
+      return 'Runtime';
+    case 'databases':
+      return 'Databases';
+    case 'infrastructureServices':
+      return 'Infrastructure Services';
     case 'technologies':
-      return 'Technologies';
+      return 'Infrastructure Services';
     case 'programmes':
       return 'Programmes';
     case 'projects':
@@ -46,6 +65,8 @@ export const titleForCatalogKind = (kind: CatalogKind) => {
       return 'Principles';
     case 'requirements':
       return 'Requirements';
+    case 'standards':
+      return 'Standards';
     default:
       return 'Catalog';
   }
@@ -67,8 +88,20 @@ const objectTypesForCatalog = (kind: CatalogKind): readonly ObjectType[] => {
       return ['Application'];
     case 'applicationServices':
       return ['ApplicationService'];
+    case 'interfaces':
+      return ['Interface'];
+    case 'nodes':
+      return ['Node'];
+    case 'compute':
+      return ['Compute'];
+    case 'runtime':
+      return ['Runtime'];
+    case 'databases':
+      return ['Database'];
+    case 'infrastructureServices':
+      return ['Technology', 'Storage', 'API', 'MessageBroker', 'IntegrationPlatform', 'CloudService'];
     case 'technologies':
-      return ['Technology'];
+      return ['Technology', 'Storage', 'API', 'MessageBroker', 'IntegrationPlatform', 'CloudService'];
     case 'programmes':
       return ['Programme'];
     case 'projects':
@@ -77,6 +110,8 @@ const objectTypesForCatalog = (kind: CatalogKind): readonly ObjectType[] => {
       return ['Principle'];
     case 'requirements':
       return ['Requirement'];
+    case 'standards':
+      return ['Standard'];
     default:
       return [];
   }
@@ -105,9 +140,21 @@ const layerForObjectType = (type: ObjectType): string => {
   ) {
     return 'Business';
   }
-  if (type === 'Application' || type === 'ApplicationService') return 'Application';
-  if (type === 'Technology') return 'Technology';
-  if (type === 'Programme' || type === 'Project' || type === 'Principle' || type === 'Requirement') return 'Strategy';
+  if (type === 'Application' || type === 'ApplicationService' || type === 'Interface') return 'Application';
+  if (
+    type === 'Technology' ||
+    type === 'Node' ||
+    type === 'Compute' ||
+    type === 'Runtime' ||
+    type === 'Database' ||
+    type === 'Storage' ||
+    type === 'API' ||
+    type === 'MessageBroker' ||
+    type === 'IntegrationPlatform' ||
+    type === 'CloudService'
+  )
+    return 'Technology';
+  if (type === 'Programme' || type === 'Project' || type === 'Principle' || type === 'Requirement' || type === 'Standard') return 'Strategy';
   return 'Unknown';
 };
 

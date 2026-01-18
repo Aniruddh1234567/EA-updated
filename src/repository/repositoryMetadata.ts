@@ -25,6 +25,8 @@ export type EaRepositoryMetadata = {
   industry?: string;
   architectureScope: ArchitectureScope;
   referenceFramework: ReferenceFramework;
+  /** Optional: enable multiple frameworks at once (union of allowed types). */
+  enabledFrameworks?: ReferenceFramework[];
   governanceMode: GovernanceMode;
   lifecycleCoverage: LifecycleCoverage;
   timeHorizon: TimeHorizon;
@@ -76,6 +78,11 @@ export const validateRepositoryMetadata = (
     return { ok: false, error: 'Reference Framework is required.' };
   }
 
+  const enabledFrameworksRaw = Array.isArray(v?.enabledFrameworks) ? (v.enabledFrameworks as unknown[]) : [];
+  const enabledFrameworks = enabledFrameworksRaw
+    .map((f) => String(f) as ReferenceFramework)
+    .filter((f) => REFERENCE_FRAMEWORKS.includes(f));
+
   const governanceMode = v?.governanceMode as GovernanceMode;
   if (!GOVERNANCE_MODES.includes(governanceMode)) {
     return { ok: false, error: 'Governance Mode is required.' };
@@ -109,6 +116,7 @@ export const validateRepositoryMetadata = (
       industry: industry || undefined,
       architectureScope,
       referenceFramework,
+      enabledFrameworks: enabledFrameworks.length > 0 ? enabledFrameworks : undefined,
       governanceMode,
       lifecycleCoverage,
       timeHorizon,

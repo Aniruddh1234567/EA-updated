@@ -37,6 +37,41 @@ declare global {
 				| { ok: true; folderPath?: string; canceled?: boolean }
 				| { ok: false; error: string }
 			>;
+			listManagedRepositories: () => Promise<
+				| {
+					ok: true;
+					items: Array<{
+						id: string;
+						name: string;
+						description?: string;
+						createdAt?: string | null;
+						updatedAt?: string | null;
+						lastOpenedAt?: string | null;
+					}>;
+				}
+				| { ok: false; error: string }
+			>;
+			loadManagedRepository: (repositoryId: string) => Promise<
+				| { ok: true; repositoryId: string; content: string }
+				| { ok: false; error: string }
+			>;
+			saveManagedRepository: (args: { payload: unknown; repositoryId?: string | null }) => Promise<
+				| { ok: true; repositoryId: string; name?: string }
+				| { ok: false; error: string }
+			>;
+			exportRepository: (args: { payload: unknown; suggestedName?: string }) => Promise<
+				| { ok: true; canceled?: boolean }
+				| { ok: false; error: string }
+			>;
+			consumePendingRepositoryImports: () => Promise<
+				| { ok: true; items: Array<{ name: string; content: string }> }
+				| { ok: false; error: string }
+			>;
+			onRepositoryPackageImport: (handler: (payload: { name: string; content: string }) => void) => void;
+			importLegacyProjectAtPath: (filePath: string) => Promise<
+				| { ok: true; name: string; content: string }
+				| { ok: false; error: string }
+			>;
 			openDevTools: () => Promise<{ ok: true } | { ok: false; error: string }>;
 		};
 	}

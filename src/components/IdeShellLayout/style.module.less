@@ -436,22 +436,432 @@
   background: linear-gradient(180deg, #fff7e6 0%, #ffffff 40%);
 }
 
-.studioHeader {
-  padding: 10px 14px;
+.studioCommandRow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  row-gap: 4px;
+  overflow: visible;
+}
+
+.studioToolBar {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  flex: 0 0 auto;
+}
+
+.studioToolButton,
+.studioToolButtonActive {
+  height: 28px !important;
+  width: 28px;
+  padding: 0 !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+}
+
+.studioToolButtonActive {
+  background: rgba(0, 0, 0, 0.18) !important;
+}
+
+.studioToolButton :global(.anticon),
+.studioToolButtonActive :global(.anticon) {
+  font-size: 16px;
+}
+
+.studioLayerInlineGroup {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 6px;
+  height: 20px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.55);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.studioLayerInlineGroup :global(.ant-checkbox-wrapper) {
+  margin-inline: 0;
+  font-size: 11px;
+  color: rgba(0, 0, 0, 0.65);
+}
+
+.studioRibbonGroup {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  flex: 0 0 auto;
+}
+
+.studioRibbonGroupTitle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  font-weight: 700;
+  color: rgba(0, 0, 0, 0.7);
+  white-space: nowrap;
+}
+
+.studioRibbonGroupTitle :global(.anticon) {
+  font-size: 12px;
+}
+
+.studioRibbonGroupContent {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+
+.studioRibbonGroupSmall {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  flex: 0 0 auto;
+}
+
+.studioRibbonGroupPrimary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(0, 0, 0, 0.14);
+  flex: 2 1 520px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.studioRibbonGroupMuted {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  color: rgba(0, 0, 0, 0.65);
+  flex: 0 0 auto;
+}
+
+.studioRibbonGroupActions {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  flex: 0 0 auto;
+}
+
+.studioRibbonItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: rgba(0, 0, 0, 0.85);
+  white-space: nowrap;
+}
+
+.studioRibbonItemCompact {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.studioRibbonItemCompact :global(.ant-input-number) {
+  height: 28px;
+}
+
+.studioRibbonItemCompact :global(.ant-input-number-input) {
+  height: 26px;
+  line-height: 26px;
+}
+
+.studioRibbonItemLabel {
+  font-weight: 600;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.studioRibbonItemMuted {
+  color: rgba(0, 0, 0, 0.6);
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.studioRibbonItemMutedLabel {
+  font-size: 11px;
+  font-weight: 600;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: rgba(0, 0, 0, 0.7);
+}
+
+.studioRibbonToggleGroup {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.studioRibbonToggle,
+.studioRibbonToggleActive {
+  height: 28px !important;
+  padding: 0 10px !important;
+  border-radius: 6px;
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.75) !important;
+  border: 1px solid rgba(0, 0, 0, 0.12) !important;
+}
+
+.studioRibbonToggleActive {
+  background: rgba(0, 0, 0, 0.18) !important;
+  color: rgba(0, 0, 0, 0.95) !important;
+}
+
+.studioRibbonHint {
+  font-size: 11px;
+  color: rgba(0, 0, 0, 0.6);
+  white-space: nowrap;
+}
+
+.studioRibbonHintIcon {
+  font-size: 16px;
+  color: rgba(0, 0, 0, 0.65);
+}
+
+.studioRibbonBand {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.studioRibbonDivider {
+  width: 1px;
+  align-self: stretch;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.studioRibbonButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(0, 0, 0, 0.14);
+  background: rgba(255, 255, 255, 0.95);
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.9);
+  cursor: pointer;
+}
+
+.studioRibbonButton:hover {
+  border-color: rgba(0, 0, 0, 0.2);
+}
+
+.studioRibbonButtonIconOnly {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid rgba(0, 0, 0, 0.14);
+  background: rgba(255, 255, 255, 0.95);
+  cursor: pointer;
+}
+
+.studioRibbonButtonIconOnly:hover {
+  border-color: rgba(0, 0, 0, 0.2);
+}
+
+.studioRibbonIconOnly {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+}
+
+.studioRibbonButton :global(.anticon),
+.studioRibbonButtonIconOnly :global(.anticon) {
+  font-size: 16px;
+}
+
+
+
+.studioShortcutBar {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+  height: 20px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.55);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.studioShortcutButton,
+.studioShortcutButtonActive {
+  height: 18px !important;
+  padding: 0 6px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 4px;
+  border-radius: 4px;
+}
+
+.studioShortcutButton :global(.ant-btn-icon),
+.studioShortcutButtonActive :global(.ant-btn-icon) {
+  margin-inline-end: 0;
+}
+
+.studioShortcutButtonActive {
+  background: rgba(0, 0, 0, 0.12) !important;
+}
+
+.studioShortcutLabel {
+  font-size: 11px;
+  color: rgba(0, 0, 0, 0.7);
+}
+
+.studioCommandTitle {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  font-weight: 600;
+  opacity: 0.9;
+}
+
+.studioCommandDivider {
+  width: 1px;
+  height: 16px;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.studioCommandWorkspace {
+  font-weight: 600;
+  max-width: 260px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+
+.studioCommandMeta {
+  font-size: 12px;
+}
+
+.studioCommandActions {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  border-bottom: 1px solid;
+  gap: 2px;
+  flex-wrap: nowrap;
+}
+
+
+.studioCommandActions :global(.ant-btn) {
+  height: 28px;
+  padding-inline: 6px;
+}
+
+.studioCommandActions :global(.ant-btn .anticon) {
+  font-size: 16px;
+}
+
+.studioCommandStatus {
+  font-size: 11px;
+  color: rgba(0, 0, 0, 0.6);
+  white-space: nowrap;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .studioSubHeader {
-  height: 36px;
-  padding: 0 14px;
+  height: 32px;
+  padding: 0 12px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   border-bottom: 1px solid var(--ide-border);
   background: var(--ide-bg-container);
+}
+
+.studioSubHeaderLeft {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.studioSubHeaderTitle {
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.studioSubHeaderLabel {
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.studioSubHeaderRight {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+}
+
+
+.studioSubHeaderMeta {
+  font-size: 12px;
+}
+
+.studioViewTabs {
+  padding: 4px 12px 6px;
+  border-bottom: 1px solid var(--ide-border);
+  background: var(--ide-bg-container);
+}
+
+.studioViewTabs :global(.ant-tabs-nav) {
+  margin: 0;
+}
+
+.studioViewTabs :global(.ant-tabs-nav::before) {
+  border-bottom: none;
 }
 
 .studioStatusBar {
@@ -468,7 +878,7 @@
   flex: 1 1 auto;
   min-height: 0;
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr) 360px;
+  grid-template-columns: minmax(0, 1fr) 320px;
   gap: 12px;
   padding: 12px;
 }
@@ -519,9 +929,9 @@
   min-height: 0;
   border: 1px dashed var(--ide-border);
   border-radius: 10px;
-  background: linear-gradient(0deg, transparent 95%, rgba(0, 0, 0, 0.03) 95%),
-    linear-gradient(90deg, transparent 95%, rgba(0, 0, 0, 0.03) 95%),
-    #fafafa;
+  background: linear-gradient(0deg, transparent 95%, rgba(0, 0, 0, 0.08) 95%),
+    linear-gradient(90deg, transparent 95%, rgba(0, 0, 0, 0.08) 95%),
+    #f7f7f7;
   background-size: 20px 20px;
   overflow: hidden;
 }
@@ -588,19 +998,28 @@
 .studioRight {
   min-height: 0;
   display: flex;
+  flex: 0 0 auto;
   flex-direction: column;
   gap: 12px;
+  overflow: hidden;
 }
 
 .studioRightSection {
   flex: 1 1 0;
   min-height: 0;
-  background: var(--ide-bg-container);
-  border: 1px solid var(--ide-border);
+  background: var(--ide-bg-layout);
+  border: 1px solid rgba(0, 0, 0, 0.08);
   border-radius: 8px;
-  padding: 12px;
+  padding: 10px;
   display: flex;
   flex-direction: column;
+  gap: 8px;
+}
+
+.studioRightHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 8px;
 }
 
@@ -766,6 +1185,39 @@
   flex: 0 0 auto;
 }
 
+.studioLegendCompactList {
+  display: grid;
+  gap: 4px;
+}
+
+.studioLegendCompactItem {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  opacity: 0.75;
+}
+
+.studioLegendCompactSwatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 3px;
+  border: 1px solid var(--ide-border);
+  flex: 0 0 auto;
+}
+
+.studioLegendCompactIcon {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 auto;
+  opacity: 0.7;
+}
+
+.studioLegendCompactLabel {
+  font-size: 11px;
+  color: rgba(0, 0, 0, 0.55);
+}
+
+
 .studioRelationshipPreview {
   display: flex;
   justify-content: space-between;
@@ -774,13 +1226,16 @@
 }
 
 .rightResizer {
-  width: 6px;
+  width: 5px;
   cursor: col-resize;
   flex: 0 0 auto;
+  background: var(--ide-border);
+  opacity: 0.35;
 }
 
 .rightResizer:hover {
   background: var(--ide-resizer-hover);
+  opacity: 1;
 }
 
 .rightPanel {
@@ -790,9 +1245,7 @@
   min-height: 0;
   border-left: 1px solid var(--ide-border);
   background: var(--ide-bg-container);
-  box-shadow: -8px 0 18px rgba(0, 0, 0, 0.08);
-  position: relative;
-  z-index: 1;
+  box-shadow: none;
 }
 
 .rightCollapsedBar {
@@ -802,9 +1255,7 @@
   justify-content: center;
   border-left: 1px solid var(--ide-border);
   background: var(--ide-rail-bg);
-  box-shadow: -6px 0 14px rgba(0, 0, 0, 0.06);
-  position: relative;
-  z-index: 1;
+  box-shadow: none;
 }
 
 .bottomResizer {

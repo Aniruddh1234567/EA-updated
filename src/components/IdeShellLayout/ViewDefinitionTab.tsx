@@ -13,23 +13,14 @@ import { useEaRepository } from '@/ea/EaRepositoryContext';
 import { getTimeHorizonWindow } from '@/repository/timeHorizonPolicy';
 import { useIdeShell } from './index';
 import { ViewpointRegistry } from '@/diagram-studio/viewpoints/ViewpointRegistry';
+import { ViewLayoutStore } from '@/diagram-studio/view-runtime/ViewLayoutStore';
 
-const layoutStorageKey = (viewId: string) => `ea.view.layout.positions:${viewId}`;
 const GRID_SIZE = 12;
 
 const snapToGrid = (value: number) => Math.round(value / GRID_SIZE) * GRID_SIZE;
 
 const loadLayoutPositions = (viewId: string): Record<string, { x: number; y: number }> => {
-  if (!viewId) return {};
-  try {
-    const raw = localStorage.getItem(layoutStorageKey(viewId));
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    if (parsed && typeof parsed === 'object') return parsed as Record<string, { x: number; y: number }>;
-  } catch {
-    /* ignore */
-  }
-  return {};
+  return ViewLayoutStore.get(viewId);
 };
 
 const persistLayoutPositions = (viewId: string, cy: Core) => {
@@ -39,11 +30,7 @@ const persistLayoutPositions = (viewId: string, cy: Core) => {
     const pos = n.position();
     positions[n.id()] = { x: snapToGrid(pos.x), y: snapToGrid(pos.y) };
   });
-  try {
-    localStorage.setItem(layoutStorageKey(viewId), JSON.stringify(positions));
-  } catch {
-    /* ignore */
-  }
+  ViewLayoutStore.set(viewId, positions);
 };
 
 export type ViewDefinitionTabProps = {
