@@ -154,7 +154,8 @@ const layerForObjectType = (type: ObjectType): string => {
     type === 'CloudService'
   )
     return 'Technology';
-  if (type === 'Programme' || type === 'Project' || type === 'Principle' || type === 'Requirement' || type === 'Standard') return 'Strategy';
+  if (type === 'Programme' || type === 'Project') return 'Implementation & Migration';
+  if (type === 'Principle' || type === 'Requirement' || type === 'Standard') return 'Governance';
   return 'Unknown';
 };
 

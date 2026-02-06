@@ -48,6 +48,101 @@ const safeSlug = (value: string) =>
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/(^-|-$)/g, '') || 'export';
 
+const TECHNICAL_TERMS = [
+  'api',
+  'application',
+  'app',
+  'database',
+  'server',
+  'cloud',
+  'platform',
+  'infrastructure',
+  'network',
+  'system',
+  'software',
+  'hardware',
+  'integration',
+  'interface',
+  'runtime',
+  'compute',
+  'storage',
+  'message',
+  'broker',
+  'queue',
+  'pipeline',
+  'middleware',
+  'technology',
+  'tech',
+];
+
+const PHYSICAL_TERMS = [
+  'server',
+  'database',
+  'db',
+  'host',
+  'node',
+  'vm',
+  'virtual machine',
+  'cluster',
+  'container',
+  'kubernetes',
+  'k8s',
+  'docker',
+  'runtime',
+  'compute',
+  'storage',
+  'network',
+  'router',
+  'switch',
+  'firewall',
+  'load balancer',
+  'gateway',
+  'infra',
+  'infrastructure',
+];
+
+const PROCESS_VERBS = [
+  'Place',
+  'Process',
+  'Approve',
+  'Validate',
+  'Verify',
+  'Assess',
+  'Review',
+  'Fulfill',
+  'Manage',
+  'Handle',
+  'Create',
+  'Update',
+  'Resolve',
+  'Reconcile',
+  'Notify',
+  'Onboard',
+  'Register',
+  'Close',
+  'Issue',
+  'Capture',
+  'Monitor',
+  'Deliver',
+];
+
+const findTerm = (text: string, terms: readonly string[]): string | null => {
+  const normalized = String(text ?? '').toLowerCase();
+  if (!normalized.trim()) return null;
+  for (const term of terms) {
+    const pattern = new RegExp(`\\b${term.replace(/[-/\\^$*+?.()|[\\]{}]/g, '\\$&')}\\b`, 'i');
+    if (pattern.test(normalized)) return term;
+  }
+  return null;
+};
+
+const isVerbBasedProcessName = (name: string): boolean => {
+  const trimmed = String(name ?? '').trim();
+  if (!trimmed) return false;
+  const first = trimmed.split(/\s+/)[0];
+  return PROCESS_VERBS.some((verb) => verb.toLowerCase() === first.toLowerCase());
+};
+
 const ACTIVE_REPO_ID_KEY = 'ea.repository.activeId';
 const ACTIVE_REPO_NAME_KEY = 'ea.repository.activeName';
 const PROJECT_DIRTY_KEY = 'ea.project.dirty';
@@ -1078,6 +1173,29 @@ const IdeMenuBar: React.FC = () => {
     if (!nextName) {
       message.error('Name is required.');
       return;
+    }
+
+    if (objType === 'Capability') {
+      const offending = findTerm(nextName, TECHNICAL_TERMS);
+      if (offending) {
+        message.error(`Capability names must not include technical term "${offending}".`);
+        return;
+      }
+    }
+
+    if (objType === 'BusinessProcess') {
+      if (!isVerbBasedProcessName(nextName)) {
+        message.error('BusinessProcess names must start with a verb (e.g., "Place Order").');
+        return;
+      }
+    }
+
+    if (objType === 'Application') {
+      const offending = findTerm(nextName, PHYSICAL_TERMS);
+      if (offending) {
+        message.error(`Application names must be logical (no physical term "${offending}").`);
+        return;
+      }
     }
 
     console.log('[IDE] Renaming element', { id: selectedEntityId, nextName });

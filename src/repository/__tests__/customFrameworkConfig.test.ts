@@ -12,8 +12,10 @@ describe('Custom framework config', () => {
   });
 
   test('normalizes enabledRelationshipTypes (dedupe + sort + filter invalid)', () => {
-    const cfg = normalizeCustomMetaModelConfig({ enabledRelationshipTypes: ['REALIZES', 'BadRel', 'OWNS', 'REALIZES'] });
-    expect(cfg.enabledRelationshipTypes).toEqual(['OWNS', 'REALIZES']);
+    const cfg = normalizeCustomMetaModelConfig({
+      enabledRelationshipTypes: ['REALIZES', 'BadRel', 'OWNS', 'REALIZES', 'TRIGGERS', 'SERVED_BY', 'EXPOSES', 'USES'],
+    });
+    expect(cfg.enabledRelationshipTypes).toEqual(['EXPOSES', 'OWNS', 'REALIZES', 'SERVED_BY', 'TRIGGERS', 'USES']);
   });
 
   test('getCustomMetaModelConfig defaults to Custom core seed', () => {
@@ -26,11 +28,18 @@ describe('Custom framework config', () => {
     ]);
     expect(getCustomMetaModelConfig(undefined).enabledRelationshipTypes).toEqual([
       'DEPENDS_ON',
-      'HOSTED_ON',
+      'DEPLOYED_ON',
+      'EXPOSES',
       'INTEGRATES_WITH',
       'OWNS',
+      'PROVIDED_BY',
+      'REALIZED_BY',
       'REALIZES',
+      'SERVED_BY',
       'SUPPORTS',
+      'TRIGGERS',
+      'USED_BY',
+      'USES',
     ]);
     expect(getCustomMetaModelConfig(null).enabledObjectTypes).toEqual([
       'Application',

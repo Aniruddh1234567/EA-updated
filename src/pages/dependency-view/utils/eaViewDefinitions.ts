@@ -38,9 +38,9 @@ export const EA_VIEWS: readonly EaViewDefinition[] = [
   },
   {
     id: 'technology-hosting',
-    title: 'Technology Hosting View',
+    title: 'Technology Deployment View',
     allowedObjectTypes: ['Application', 'Technology'],
-    allowedRelationshipTypes: ['HOSTED_ON'],
+    allowedRelationshipTypes: ['DEPLOYED_ON'],
     defaultLayout: 'cose',
   },
 ] as const;

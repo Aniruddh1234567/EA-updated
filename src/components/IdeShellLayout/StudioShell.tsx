@@ -1,11 +1,12 @@
 import React from 'react';
 import { Alert, Button, Collapse, Descriptions, Dropdown, Empty, Form, Input, InputNumber, Modal, Radio, Select, Space, Switch, Tabs, Tag, Tooltip, Typography, message, theme } from 'antd';
-import { AppstoreOutlined, CloudOutlined, CloseOutlined, DeleteOutlined, DragOutlined, EditOutlined, EllipsisOutlined, InfoCircleOutlined, LinkOutlined, LogoutOutlined, NodeIndexOutlined, PlusSquareOutlined, SelectOutlined } from '@ant-design/icons';
+import { AppstoreOutlined, ArrowsAltOutlined, CloudOutlined, CloseOutlined, DeleteOutlined, DragOutlined, EditOutlined, EllipsisOutlined, InfoCircleOutlined, LinkOutlined, LogoutOutlined, NodeIndexOutlined, PlusSquareOutlined, SelectOutlined, ShrinkOutlined } from '@ant-design/icons';
 import { useModel } from '@umijs/max';
 import cytoscape, { type Core } from 'cytoscape';
 
 import styles from './style.module.less';
-import { OBJECT_TYPE_DEFINITIONS, RELATIONSHIP_TYPE_DEFINITIONS, type ObjectType, type RelationshipType } from '@/pages/dependency-view/utils/eaMetaModel';
+import { EA_CONNECTOR_REGISTRY, EA_SHAPE_REGISTRY, hasRegisteredEaShape } from '@/ea/archimateShapeRegistry';
+import { OBJECT_TYPE_DEFINITIONS, RELATIONSHIP_TYPE_DEFINITIONS, type EaLayer, type EaObjectTypeDefinition, type ObjectType, type RelationshipType } from '@/pages/dependency-view/utils/eaMetaModel';
 import { isObjectTypeAllowedForReferenceFramework } from '@/repository/referenceFrameworkPolicy';
 import { canCreateObjectTypeForLifecycleCoverage } from '@/repository/lifecycleCoveragePolicy';
 import { isCustomFrameworkModelingEnabled, isObjectTypeEnabledForFramework } from '@/repository/customFrameworkConfig';
@@ -71,7 +72,38 @@ type BulkEditForm = {
   description?: string;
 };
 
-type StudioToolMode = 'SELECT' | 'CREATE_ELEMENT' | 'CREATE_RELATIONSHIP' | 'PAN';
+type StudioToolMode = 'SELECT' | 'CREATE_ELEMENT' | 'CREATE_RELATIONSHIP' | 'CREATE_FREE_CONNECTOR' | 'PAN';
+
+type FreeShapeKind =
+  | 'rectangle'
+  | 'rounded-rectangle'
+  | 'circle'
+  | 'diamond'
+  | 'text'
+  | 'swimlane'
+  | 'container'
+  | 'group'
+  | 'boundary'
+  | 'annotation';
+
+type FreeShape = {
+  id: string;
+  kind: FreeShapeKind;
+  label: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+type FreeConnectorKind = 'arrow' | 'line';
+
+type FreeConnector = {
+  id: string;
+  source: string;
+  target: string;
+  kind: FreeConnectorKind;
+};
 
 type StudioViewTab = {
   key: string;
@@ -121,6 +153,118 @@ const defaultIdPrefixForType = (type: ObjectType): string => {
   }
 };
 
+const TECHNICAL_TERMS = [
+  'api',
+  'application',
+  'app',
+  'database',
+  'server',
+  'cloud',
+  'platform',
+  'infrastructure',
+  'network',
+  'system',
+  'software',
+  'hardware',
+  'integration',
+  'interface',
+  'runtime',
+  'compute',
+  'storage',
+  'message',
+  'broker',
+  'queue',
+  'pipeline',
+  'middleware',
+  'technology',
+  'tech',
+];
+
+const PHYSICAL_TERMS = [
+  'server',
+  'database',
+  'db',
+  'host',
+  'node',
+  'vm',
+  'virtual machine',
+  'cluster',
+  'container',
+  'kubernetes',
+  'k8s',
+  'docker',
+  'runtime',
+  'compute',
+  'storage',
+  'network',
+  'router',
+  'switch',
+  'firewall',
+  'load balancer',
+  'gateway',
+  'infra',
+  'infrastructure',
+];
+
+const findTechnicalTerm = (text: string): string | null => {
+  const normalized = String(text ?? '').toLowerCase();
+  if (!normalized.trim()) return null;
+  for (const term of TECHNICAL_TERMS) {
+    const pattern = new RegExp(`\\b${term.replace(/[-/\\^$*+?.()|[\\]{}]/g, '\\$&')}\\b`, 'i');
+    if (pattern.test(normalized)) return term;
+  }
+  return null;
+};
+
+const findPhysicalTerm = (text: string): string | null => {
+  const normalized = String(text ?? '').toLowerCase();
+  if (!normalized.trim()) return null;
+  for (const term of PHYSICAL_TERMS) {
+    const pattern = new RegExp(`\\b${term.replace(/[-/\\^$*+?.()|[\\]{}]/g, '\\$&')}\\b`, 'i');
+    if (pattern.test(normalized)) return term;
+  }
+  return null;
+};
+
+const isItOwned = (value: unknown): boolean => {
+  if (typeof value !== 'string') return false;
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) return false;
+  return /\b(it|information technology)\b/i.test(normalized);
+};
+
+const PROCESS_VERBS = [
+  'Place',
+  'Process',
+  'Approve',
+  'Validate',
+  'Verify',
+  'Assess',
+  'Review',
+  'Fulfill',
+  'Manage',
+  'Handle',
+  'Create',
+  'Update',
+  'Resolve',
+  'Reconcile',
+  'Notify',
+  'Onboard',
+  'Register',
+  'Close',
+  'Issue',
+  'Capture',
+  'Monitor',
+  'Deliver',
+];
+
+const isVerbBasedProcessName = (name: string): boolean => {
+  const trimmed = String(name ?? '').trim();
+  if (!trimmed) return false;
+  const first = trimmed.split(/\s+/)[0];
+  return PROCESS_VERBS.some((verb) => verb.toLowerCase() === first.toLowerCase());
+};
+
 const generateUUID = (): string => {
   try {
     if (typeof globalThis.crypto?.randomUUID === 'function') return globalThis.crypto.randomUUID();
@@ -139,7 +283,6 @@ const ALIGN_THRESHOLD = 6;
 const LARGE_GRAPH_THRESHOLD = 200;
 const DRAG_THROTTLE_MS = 50;
 const REPO_SNAPSHOT_KEY = 'ea.repository.snapshot.v1';
-const DRAFT_TARGET_ID = '__draft_target__';
 const DRAFT_EDGE_ID = '__draft_edge__';
 const WORKSPACE_TAB_KEY = '__studio_workspace__';
 const createViewTabKey = (viewId: string) => `view:${viewId}:${generateUUID()}`;
@@ -197,6 +340,12 @@ const stableStringify = (value: unknown): string => {
   return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${stableStringify(v)}`).join(',')}}`;
 };
 
+const nameForObject = (obj: { id: string; attributes?: Record<string, unknown> }) => {
+  const raw = (obj.attributes as any)?.name;
+  const name = typeof raw === 'string' ? raw.trim() : '';
+  return name || obj.id;
+};
+
 const areAttributesEqual = (a?: Record<string, unknown> | null, b?: Record<string, unknown> | null) => {
   const left = normalizeAttributesForCompare(a);
   const right = normalizeAttributesForCompare(b);
@@ -205,89 +354,210 @@ const areAttributesEqual = (a?: Record<string, unknown> | null, b?: Record<strin
 
 const buildSvgIcon = (svg: string) => `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 
-const TECHNOLOGY_VISUALS = [
+const resolveEaShapeForObjectType = (
+  type: ObjectType | string,
+): 'round-rectangle' | 'rectangle' | 'ellipse' | 'diamond' | 'hexagon' | null => {
+  return EA_DEFAULT_VISUAL_BY_TYPE.get(type as ObjectType)?.shape ?? null;
+};
+
+type EaVisualShape = 'round-rectangle' | 'rectangle' | 'ellipse' | 'diamond' | 'hexagon';
+type EaVisualKind = string;
+type EaVisual = {
+  kind: EaVisualKind;
+  type: ObjectType;
+  layer: EaLayer;
+  label: string;
+  shape: EaVisualShape;
+  icon: string;
+  color?: string;
+  border?: string;
+};
+
+const EA_VISUALS: EaVisual[] = EA_SHAPE_REGISTRY.map((entry) => ({
+  kind: entry.kind,
+  type: entry.type,
+  layer: entry.layer,
+  label: entry.label,
+  shape: entry.canvas.shape,
+  icon: entry.svgPath,
+  color: 'transparent',
+  border: 'transparent',
+}));
+
+const EA_VISUAL_BY_KIND = new Map(EA_VISUALS.map((v) => [v.kind, v] as const));
+const EA_DEFAULT_VISUAL_BY_TYPE = (() => {
+  const map = new Map<ObjectType, EaVisual>();
+  EA_VISUALS.forEach((v) => {
+    if (!map.has(v.type)) map.set(v.type, v);
+  });
+  return map;
+})();
+
+
+const resolveEaVisualForElement = (args: {
+  type: ObjectType;
+  attributes?: Record<string, unknown> | null;
+  visualKindOverride?: string | null;
+}): EaVisual | null => {
+  const rawKind = args.visualKindOverride ?? (args.attributes as any)?.eaVisualKind;
+  const kind = typeof rawKind === 'string' ? rawKind.trim() : '';
+  if (kind && EA_VISUAL_BY_KIND.has(kind)) {
+    const visual = EA_VISUAL_BY_KIND.get(kind)!;
+    if (visual.type === args.type) return visual;
+  }
+  return EA_DEFAULT_VISUAL_BY_TYPE.get(args.type) ?? null;
+};
+
+const buildEaVisualData = (args: {
+  type: ObjectType;
+  attributes?: Record<string, unknown> | null;
+  visualKindOverride?: string | null;
+}) => {
+  const visual = resolveEaVisualForElement(args);
+  if (!visual) {
+    return {
+      eaShape: undefined,
+      eaIcon: undefined,
+      eaColor: undefined,
+      eaBorder: undefined,
+      eaVisualKind: undefined,
+    } as const;
+  }
+  return {
+    eaShape: visual.shape,
+    eaIcon: visual.icon,
+    eaColor: visual.color,
+    eaBorder: visual.border,
+    eaVisualKind: visual.kind,
+  } as const;
+};
+
+const FREE_SHAPE_DEFINITIONS: Array<{
+  kind: FreeShapeKind;
+  label: string;
+  icon: string;
+  width: number;
+  height: number;
+  shape: 'rectangle' | 'round-rectangle' | 'ellipse' | 'diamond';
+}> = [
   {
-    type: 'Node',
-    label: 'Node (Physical / Virtual)',
-    color: '#e6f4ff',
-    border: '#91caff',
+    kind: 'rectangle',
+    label: 'Rectangle',
     icon: buildSvgIcon(
-      '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"><rect x="2" y="3" width="12" height="8" rx="1.5" fill="none" stroke="#434343" stroke-width="1.2"/><circle cx="5" cy="7" r="0.8" fill="#434343"/><circle cx="8" cy="7" r="0.8" fill="#434343"/><circle cx="11" cy="7" r="0.8" fill="#434343"/><rect x="5" y="12" width="6" height="1.5" rx="0.6" fill="#434343"/></svg>',
+      '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20"><rect x="3" y="4" width="14" height="12" rx="2" fill="none" stroke="#595959" stroke-width="1.4"/></svg>',
+    ),
+    width: 140,
+    height: 90,
+    shape: 'rectangle',
+  },
+  {
+    kind: 'rounded-rectangle',
+    label: 'Rounded Rectangle',
+    icon: buildSvgIcon(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20"><rect x="3" y="4" width="14" height="12" rx="4" fill="none" stroke="#595959" stroke-width="1.4"/></svg>',
+    ),
+    width: 150,
+    height: 95,
+    shape: 'round-rectangle',
+  },
+  {
+    kind: 'circle',
+    label: 'Circle',
+    icon: buildSvgIcon(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20"><circle cx="10" cy="10" r="6" fill="none" stroke="#595959" stroke-width="1.4"/></svg>',
+    ),
+    width: 90,
+    height: 90,
+    shape: 'ellipse',
+  },
+  {
+    kind: 'diamond',
+    label: 'Diamond',
+    icon: buildSvgIcon(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20"><polygon points="10,3 17,10 10,17 3,10" fill="none" stroke="#595959" stroke-width="1.4"/></svg>',
+    ),
+    width: 100,
+    height: 100,
+    shape: 'diamond',
+  },
+  {
+    kind: 'text',
+    label: 'Text Box',
+    icon: buildSvgIcon(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20"><path d="M4 5h12M10 5v10" stroke="#595959" stroke-width="1.4" stroke-linecap="round"/></svg>',
+    ),
+    width: 160,
+    height: 60,
+    shape: 'rectangle',
+  },
+  {
+    kind: 'swimlane',
+    label: 'Swimlane',
+    icon: buildSvgIcon(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20"><rect x="3" y="4" width="14" height="12" rx="2" fill="none" stroke="#595959" stroke-width="1.4"/><line x1="3" y1="10" x2="17" y2="10" stroke="#595959" stroke-width="1.2"/></svg>',
+    ),
+    width: 220,
+    height: 120,
+    shape: 'round-rectangle',
+  },
+  {
+    kind: 'container',
+    label: 'Container',
+    icon: buildSvgIcon(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20"><rect x="3" y="4" width="14" height="12" rx="2" fill="none" stroke="#595959" stroke-width="1.4" stroke-dasharray="3 2"/></svg>',
+    ),
+    width: 240,
+    height: 140,
+    shape: 'round-rectangle',
+  },
+  {
+    kind: 'group',
+    label: 'Group',
+    icon: buildSvgIcon(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20"><rect x="3" y="5" width="14" height="10" rx="2" fill="none" stroke="#595959" stroke-width="1.4" stroke-dasharray="4 2"/><rect x="5" y="3" width="6" height="4" rx="1" fill="none" stroke="#595959" stroke-width="1.2"/></svg>',
+    ),
+    width: 260,
+    height: 160,
+    shape: 'round-rectangle',
+  },
+  {
+    kind: 'boundary',
+    label: 'Boundary',
+    icon: buildSvgIcon(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20"><rect x="3" y="4" width="14" height="12" rx="2" fill="none" stroke="#595959" stroke-width="1.4" stroke-dasharray="1 2"/></svg>',
+    ),
+    width: 260,
+    height: 160,
+    shape: 'round-rectangle',
+  },
+  {
+    kind: 'annotation',
+    label: 'Annotation',
+    icon: buildSvgIcon(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20"><rect x="3" y="4" width="14" height="12" rx="2" fill="none" stroke="#595959" stroke-width="1.4"/><line x1="5" y1="8" x2="15" y2="8" stroke="#595959" stroke-width="1.2"/><line x1="5" y1="12" x2="12" y2="12" stroke="#595959" stroke-width="1.2"/></svg>',
+    ),
+    width: 180,
+    height: 90,
+    shape: 'round-rectangle',
+  },
+];
+
+const FREE_CONNECTOR_DEFINITIONS: Array<{ kind: FreeConnectorKind; label: string; icon: string }> = [
+  {
+    kind: 'arrow',
+    label: 'Arrow',
+    icon: buildSvgIcon(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20"><line x1="4" y1="10" x2="14" y2="10" stroke="#595959" stroke-width="1.6"/><polygon points="14,6 18,10 14,14" fill="#595959"/></svg>',
     ),
   },
   {
-    type: 'Compute',
-    label: 'Compute (VM, Container Host)',
-    color: '#f0f5ff',
-    border: '#adc6ff',
+    kind: 'line',
+    label: 'Line',
     icon: buildSvgIcon(
-      '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"><rect x="4" y="4" width="8" height="8" rx="1.2" fill="none" stroke="#434343" stroke-width="1.2"/><path d="M2 6h2M2 10h2M12 6h2M12 10h2M6 2v2M10 2v2M6 12v2M10 12v2" stroke="#434343" stroke-width="1" stroke-linecap="round"/></svg>',
+      '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20"><line x1="4" y1="10" x2="16" y2="10" stroke="#595959" stroke-width="1.6"/></svg>',
     ),
   },
-  {
-    type: 'Runtime',
-    label: 'Runtime (JVM, Node.js, .NET)',
-    color: '#f6ffed',
-    border: '#b7eb8f',
-    icon: buildSvgIcon(
-      '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"><path d="M4 3h8v10H4z" fill="none" stroke="#434343" stroke-width="1.2"/><path d="M6 5h4M6 8h4M6 11h2" stroke="#434343" stroke-width="1" stroke-linecap="round"/></svg>',
-    ),
-  },
-  {
-    type: 'Database',
-    label: 'Database',
-    color: '#fff7e6',
-    border: '#ffd591',
-    icon: buildSvgIcon(
-      '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"><ellipse cx="8" cy="4" rx="4.5" ry="2.2" fill="none" stroke="#434343" stroke-width="1.2"/><path d="M3.5 4v6.5c0 1.2 2 2.2 4.5 2.2s4.5-1 4.5-2.2V4" fill="none" stroke="#434343" stroke-width="1.2"/></svg>',
-    ),
-  },
-  {
-    type: 'Storage',
-    label: 'Storage',
-    color: '#fff0f6',
-    border: '#ffadd2',
-    icon: buildSvgIcon(
-      '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"><rect x="3" y="4" width="10" height="8" rx="1.2" fill="none" stroke="#434343" stroke-width="1.2"/><path d="M5 6h6M5 8h6M5 10h3" stroke="#434343" stroke-width="1" stroke-linecap="round"/></svg>',
-    ),
-  },
-  {
-    type: 'API',
-    label: 'API / Gateway',
-    color: '#f9f0ff',
-    border: '#d3adf7',
-    icon: buildSvgIcon(
-      '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"><path d="M5 5l-2 3 2 3" fill="none" stroke="#434343" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M11 5l2 3-2 3" fill="none" stroke="#434343" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M7 4l2 8" stroke="#434343" stroke-width="1.2" stroke-linecap="round"/></svg>',
-    ),
-  },
-  {
-    type: 'MessageBroker',
-    label: 'Message Broker',
-    color: '#e6fffb',
-    border: '#87e8de',
-    icon: buildSvgIcon(
-      '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"><rect x="2.5" y="3" width="11" height="7" rx="1.5" fill="none" stroke="#434343" stroke-width="1.2"/><path d="M5 12l2-2h4" stroke="#434343" stroke-width="1.2" stroke-linecap="round"/></svg>',
-    ),
-  },
-  {
-    type: 'IntegrationPlatform',
-    label: 'Integration Platform',
-    color: '#f0f0f0',
-    border: '#bfbfbf',
-    icon: buildSvgIcon(
-      '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="2" fill="none" stroke="#434343" stroke-width="1.2"/><path d="M8 2v3M8 11v3M2 8h3M11 8h3" stroke="#434343" stroke-width="1.2" stroke-linecap="round"/><circle cx="3" cy="3" r="1" fill="#434343"/><circle cx="13" cy="3" r="1" fill="#434343"/><circle cx="3" cy="13" r="1" fill="#434343"/><circle cx="13" cy="13" r="1" fill="#434343"/></svg>',
-    ),
-  },
-  {
-    type: 'CloudService',
-    label: 'Cloud Service',
-    color: '#f0f7ff',
-    border: '#a3d3ff',
-    icon: buildSvgIcon(
-      '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"><path d="M4.5 11.5h7a2.5 2.5 0 0 0 .1-5 3.4 3.4 0 0 0-6.6-.8A2.6 2.6 0 0 0 4.5 11.5z" fill="none" stroke="#434343" stroke-width="1.2" stroke-linejoin="round"/></svg>',
-    ),
-  },
-] as const;
+];
 
 const StudioShell: React.FC<StudioShellProps> = ({
   propertiesPanel,
@@ -334,14 +604,27 @@ const StudioShell: React.FC<StudioShellProps> = ({
     () => designWorkspace?.stagedRelationships ?? [],
   );
   const stagedSyncSignatureRef = React.useRef<string | null>(null);
+  const resolveElementVisualLabel = React.useCallback(
+    (type: ObjectType, visualKind?: string | null) => {
+      const visual = resolveEaVisualForElement({ type, visualKindOverride: visualKind ?? undefined });
+      return visual?.label ?? type;
+    },
+    [],
+  );
+  const pendingElementLabel = React.useMemo(
+    () => (pendingElementType ? resolveElementVisualLabel(pendingElementType, pendingElementVisualKind) : null),
+    [pendingElementType, pendingElementVisualKind, resolveElementVisualLabel],
+  );
   const createElementHelperText = React.useMemo(() => {
     if (toolMode !== 'CREATE_ELEMENT' || !pendingElementType) return null;
-    return `Click on canvas to place ${pendingElementType}`;
-  }, [pendingElementType, toolMode]);
+    if (pendingElementNameDraft) return `Click on canvas to place "${pendingElementNameDraft.name}"`;
+    return `Click on canvas to name and place ${pendingElementLabel ?? pendingElementType}`;
+  }, [pendingElementLabel, pendingElementNameDraft, pendingElementType, toolMode]);
   const createElementFloatingHint = React.useMemo(() => {
     if (toolMode !== 'CREATE_ELEMENT' || !pendingElementType) return null;
-    return `Placing: ${pendingElementType}`;
-  }, [pendingElementType, toolMode]);
+    if (pendingElementNameDraft) return `Placing: ${pendingElementNameDraft.name}`;
+    return `Naming: ${pendingElementLabel ?? pendingElementType}`;
+  }, [pendingElementLabel, pendingElementNameDraft, pendingElementType, toolMode]);
 
   const hasStagedChanges = stagedElements.length > 0 || stagedRelationships.length > 0;
   const commitDisabled = !hasStagedChanges || !hasModelingAccess || commitContextLocked || !eaRepository;
@@ -354,6 +637,7 @@ const StudioShell: React.FC<StudioShellProps> = ({
   const cyRef = React.useRef<Core | null>(null);
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const [form] = Form.useForm<{ name: string; description?: string }>();
+  const [freeShapeForm] = Form.useForm<{ label: string }>();
   const [workspaceForm] = Form.useForm<DesignWorkspaceForm>();
   const [viewSummaryForm] = Form.useForm<ViewSummaryForm>();
   const [quickCreateForm] = Form.useForm<QuickCreateForm>();
@@ -364,9 +648,23 @@ const StudioShell: React.FC<StudioShellProps> = ({
     () => `ea.studio.guidance.ignore.${designWorkspace.id}`,
     [designWorkspace.id],
   );
+  const designPromptIgnoreStorageKey = React.useMemo(
+    () => `ea.studio.designPrompts.ignore.${designWorkspace.id}`,
+    [designWorkspace.id],
+  );
   const [ignoredGuidance, setIgnoredGuidance] = React.useState<string[]>(() => {
     try {
       const raw = localStorage.getItem(guidanceIgnoreStorageKey);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw) as string[];
+      return Array.isArray(parsed) ? parsed.filter((m) => typeof m === 'string') : [];
+    } catch {
+      return [];
+    }
+  });
+  const [ignoredDesignPrompts, setIgnoredDesignPrompts] = React.useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem(designPromptIgnoreStorageKey);
       if (!raw) return [];
       const parsed = JSON.parse(raw) as string[];
       return Array.isArray(parsed) ? parsed.filter((m) => typeof m === 'string') : [];
@@ -408,12 +706,14 @@ const StudioShell: React.FC<StudioShellProps> = ({
     if (!initialViewTabRef.current) return {};
     const view = ViewStore.get(initialViewTabRef.current.viewId) ?? null;
     const positions = (view?.layoutMetadata as any)?.positions ?? {};
+    const freeShapes = (view?.layoutMetadata as any)?.freeShapes ?? [];
+    const freeConnectors = (view?.layoutMetadata as any)?.freeConnectors ?? [];
     return {
       [initialViewTabRef.current.key]: {
         viewId: initialViewTabRef.current.viewId,
         view,
         saveStatus: 'saved',
-        lastSavedSignature: JSON.stringify(positions),
+        lastSavedSignature: stableStringify({ positions, freeShapes, freeConnectors }),
       },
     };
   });
@@ -451,6 +751,11 @@ const StudioShell: React.FC<StudioShellProps> = ({
   const canDiagramMode = (studioModeLevel === 'Design' || studioModeLevel === 'Model') && !presentationView;
   const canModelMode = studioModeLevel === 'Model' && !presentationView;
   const presentationReadOnly = viewReadOnly || presentationView;
+  const showToolbox = canDiagramMode;
+  const toolboxInteractionDisabled = viewReadOnly || !canDiagramMode;
+  const [toolboxCollapsed, setToolboxCollapsed] = React.useState(false);
+  const [toolboxExpanded, setToolboxExpanded] = React.useState(false);
+  const toolboxPrevWidthRef = React.useRef<number | null>(null);
 
   React.useEffect(() => {
     const summary = (activeView?.layoutMetadata as any)?.summary as ViewSummaryForm | undefined;
@@ -494,6 +799,21 @@ const StudioShell: React.FC<StudioShellProps> = ({
     const view = viewContext?.viewId ? ViewStore.get(viewContext.viewId) : null;
     return (view?.name ?? activeViewName ?? viewContext?.viewId ?? '').trim() || null;
   }, [activeViewName, isViewBoundWorkspace, viewContext?.viewId]);
+  const toggleToolboxExpanded = React.useCallback(() => {
+    const maxWidth = getStudioRightPanelMaxWidth();
+    setToolboxExpanded((prev) => {
+      if (!prev) {
+        toolboxPrevWidthRef.current = studioRightWidth;
+        setStudioRightWidth(maxWidth);
+        return true;
+      }
+      const fallback = toolboxPrevWidthRef.current ?? 360;
+      const next = Math.min(maxWidth, Math.max(STUDIO_RIGHT_PANEL_MIN_WIDTH, fallback));
+      setStudioRightWidth(next);
+      toolboxPrevWidthRef.current = null;
+      return false;
+    });
+  }, [studioRightWidth]);
   const workspaceDisplayName = React.useMemo(() => {
     const direct = (designWorkspace.name ?? '').trim();
     if (direct) return direct;
@@ -506,6 +826,12 @@ const StudioShell: React.FC<StudioShellProps> = ({
   const [bulkEditOpen, setBulkEditOpen] = React.useState(false);
   const [selectedNodeIds, setSelectedNodeIds] = React.useState<string[]>([]);
   const [selectedEdgeId, setSelectedEdgeId] = React.useState<string | null>(null);
+  const [selectedFreeShapeId, setSelectedFreeShapeId] = React.useState<string | null>(null);
+  const [selectedFreeConnectorId, setSelectedFreeConnectorId] = React.useState<string | null>(null);
+  const [freeShapes, setFreeShapes] = React.useState<FreeShape[]>([]);
+  const [freeConnectors, setFreeConnectors] = React.useState<FreeConnector[]>([]);
+  const [pendingFreeConnectorKind, setPendingFreeConnectorKind] = React.useState<FreeConnectorKind | null>(null);
+  const [freeConnectorSourceId, setFreeConnectorSourceId] = React.useState<string | null>(null);
   const [nodeContextMenu, setNodeContextMenu] = React.useState<
     { x: number; y: number; nodeId: string } | null
   >(null);
@@ -514,15 +840,123 @@ const StudioShell: React.FC<StudioShellProps> = ({
   >(null);
   const [validationGateOpen, setValidationGateOpen] = React.useState(false);
   const stagedInitRef = React.useRef(false);
-  const ribbonElementTypes: ObjectType[] = ['Capability', 'Application', 'Node'];
-  const ribbonTechnologyTypes: ObjectType[] = ['Database', 'Storage', 'API', 'MessageBroker', 'IntegrationPlatform', 'CloudService'];
-  const ribbonRelationshipTypes: RelationshipType[] = ['SUPPORTS', 'DEPENDS_ON', 'COMPOSED_OF', 'CONNECTS_TO', 'USES', 'HOSTED_ON'];
-  const ribbonTechnologyLabels: Partial<Record<ObjectType, string>> = {
-    API: 'API / Gateway',
-    IntegrationPlatform: 'Integration Platform',
-    MessageBroker: 'Message Broker',
-    CloudService: 'Cloud Service',
+  const relationshipLabelOverrides = React.useMemo<Partial<Record<RelationshipType, string>>>(
+    () => ({
+      SERVED_BY: 'Serves',
+      USES: 'Uses',
+      REALIZES: 'Realizes',
+      DEPLOYED_ON: 'Deploys On',
+      DEPENDS_ON: 'Depends On',
+      INTEGRATES_WITH: 'Integrates With',
+      CONNECTS_TO: 'Communicates With',
+      REALIZED_BY: 'Realized By',
+      EXPOSES: 'Exposes',
+      PROVIDED_BY: 'Provided By',
+      USED_BY: 'Used By',
+      SUPPORTS: 'Supports',
+      OWNS: 'Owns',
+      HAS: 'Has',
+      TRIGGERS: 'Triggers',
+      COMPOSED_OF: 'Composed Of',
+      DECOMPOSES_TO: 'Decomposes To',
+      CONSUMES: 'Consumes',
+      DELIVERS: 'Delivers',
+      IMPLEMENTS: 'Implements',
+      IMPACTS: 'Impacts',
+    }),
+    [],
+  );
+  const resolveRelationshipLabel = React.useCallback(
+    (type: RelationshipType) => relationshipLabelOverrides[type] || type.replace(/_/g, ' '),
+    [relationshipLabelOverrides],
+  );
+  type RelationshipStyle = 'directed' | 'dependency' | 'association' | 'flow';
+  const RELATIONSHIP_STYLE_BY_TYPE: Partial<Record<RelationshipType, RelationshipStyle>> = {
+    DEPENDS_ON: 'dependency',
+    USES: 'dependency',
+    INTEGRATES_WITH: 'association',
+    CONNECTS_TO: 'association',
+    OWNS: 'association',
+    HAS: 'association',
+    REALIZES: 'directed',
+    REALIZED_BY: 'directed',
+    SERVED_BY: 'directed',
+    EXPOSES: 'directed',
+    PROVIDED_BY: 'directed',
+    USED_BY: 'directed',
+    SUPPORTS: 'directed',
+    DEPLOYED_ON: 'flow',
+    TRIGGERS: 'flow',
+    CONSUMES: 'flow',
+    DECOMPOSES_TO: 'association',
+    COMPOSED_OF: 'association',
+    DELIVERS: 'flow',
+    IMPLEMENTS: 'directed',
+    IMPACTS: 'flow',
   };
+  const relationshipStyleForType = React.useCallback(
+    (type: RelationshipType): RelationshipStyle => RELATIONSHIP_STYLE_BY_TYPE[type] ?? 'directed',
+    [],
+  );
+  const RELATIONSHIP_SHORT_LABELS: Partial<Record<RelationshipType, string>> = {
+    SERVED_BY: 'S',
+    USES: 'U',
+    REALIZES: 'R',
+    REALIZED_BY: 'RB',
+    DEPLOYED_ON: 'D',
+    CONNECTS_TO: 'C',
+    INTEGRATES_WITH: 'I',
+    OWNS: 'O',
+    HAS: 'H',
+    TRIGGERS: 'T',
+    EXPOSES: 'E',
+    PROVIDED_BY: 'P',
+    USED_BY: 'UB',
+    SUPPORTS: 'SP',
+    DEPENDS_ON: 'DP',
+    CONSUMES: 'CN',
+    COMPOSED_OF: 'CO',
+    DECOMPOSES_TO: 'DC',
+    DELIVERS: 'DL',
+    IMPLEMENTS: 'IM',
+    IMPACTS: 'IA',
+  };
+  const buildRelationshipIcon = React.useCallback(
+    (label: string, style: RelationshipStyle, variant: 'tool' | 'connector') => {
+      const strokeDash = style === 'dependency' ? '4 2' : style === 'flow' ? '1 2' : '0';
+      const arrow = style === 'association' ? '' : '<polygon points="12,4 15,8 12,12" fill="#434343"/>';
+      const textSize = label.length > 2 ? 5 : 6.5;
+      return buildSvgIcon(
+        `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"><line x1="2" y1="8" x2="12" y2="8" stroke="#434343" stroke-width="1.2" stroke-dasharray="${strokeDash}"/>${arrow}<text x="2" y="6" font-size="${textSize}" fill="#434343" font-family="Arial" font-weight="700">${label}</text>${variant === 'connector' ? '<circle cx="2" cy="8" r="1" fill="#434343"/>' : ''}</svg>`,
+      );
+    },
+    [],
+  );
+  const resolveRelationshipIcon = React.useCallback(
+    (type: RelationshipType, variant: 'tool' | 'connector') => {
+      const shortLabel = RELATIONSHIP_SHORT_LABELS[type] || type.slice(0, 2);
+      const style = relationshipStyleForType(type);
+      return buildRelationshipIcon(shortLabel, style, variant);
+    },
+    [buildRelationshipIcon, relationshipStyleForType],
+  );
+  const ensureToolboxElementType = React.useCallback((type: ObjectType, label?: string, visualKind?: string | null) => {
+    const visual = resolveEaVisualForElement({ type, visualKindOverride: visualKind ?? undefined });
+    if (!visual || !visual.icon || !visual.shape) {
+      message.error(
+        `Toolbox item "${label ?? type}" is missing an EA Shape Registry SVG mapping (ArchiMate/drawio).`,
+      );
+      return null;
+    }
+    return visual;
+  }, []);
+  const ensureToolboxRelationshipType = React.useCallback((type: RelationshipType, label?: string) => {
+    if (!RELATIONSHIP_TYPE_DEFINITIONS[type]) {
+      message.error(`Toolbox item "${label ?? type}" is not yet wired to the canvas (missing relationship mapping).`);
+      return false;
+    }
+    return true;
+  }, []);
   const studioHeaderRef = React.useRef<HTMLDivElement | null>(null);
   const studioLeftRef = React.useRef<HTMLDivElement | null>(null);
   const studioRightRef = React.useRef<HTMLDivElement | null>(null);
@@ -580,13 +1014,15 @@ const StudioShell: React.FC<StudioShellProps> = ({
         if (!opts?.force && prev[tabKey]) return prev;
         const resolved = view ?? ViewStore.get(viewId) ?? null;
         const positions = (resolved?.layoutMetadata as any)?.positions ?? {};
+        const freeShapes = (resolved?.layoutMetadata as any)?.freeShapes ?? [];
+        const freeConnectors = (resolved?.layoutMetadata as any)?.freeConnectors ?? [];
         return {
           ...prev,
           [tabKey]: {
             viewId,
             view: resolved,
             saveStatus: 'saved',
-            lastSavedSignature: JSON.stringify(positions),
+            lastSavedSignature: stableStringify({ positions, freeShapes, freeConnectors }),
           },
         };
       });
@@ -676,11 +1112,13 @@ const StudioShell: React.FC<StudioShellProps> = ({
         const existing = nextState[tab.key];
         if (existing && existing.view === view) return;
         const positions = (view?.layoutMetadata as any)?.positions ?? {};
+        const freeShapes = (view?.layoutMetadata as any)?.freeShapes ?? [];
+        const freeConnectors = (view?.layoutMetadata as any)?.freeConnectors ?? [];
         const nextEntry: ViewTabState = {
           viewId: tab.viewId,
           view,
           saveStatus: existing?.saveStatus ?? 'saved',
-          lastSavedSignature: existing?.lastSavedSignature ?? JSON.stringify(positions),
+          lastSavedSignature: existing?.lastSavedSignature ?? stableStringify({ positions, freeShapes, freeConnectors }),
         };
         nextState = nextState === prev ? { ...prev } : nextState;
         nextState[tab.key] = nextEntry;
@@ -706,11 +1144,13 @@ const StudioShell: React.FC<StudioShellProps> = ({
           const view = ViewStore.get(existing.viewId) ?? null;
           if (existing && existing.view === view) return;
           const positions = (view?.layoutMetadata as any)?.positions ?? {};
+          const freeShapes = (view?.layoutMetadata as any)?.freeShapes ?? [];
+          const freeConnectors = (view?.layoutMetadata as any)?.freeConnectors ?? [];
           const nextEntry: ViewTabState = {
             viewId: existing.viewId,
             view,
             saveStatus: existing?.saveStatus ?? 'saved',
-            lastSavedSignature: existing?.lastSavedSignature ?? JSON.stringify(positions),
+            lastSavedSignature: existing?.lastSavedSignature ?? stableStringify({ positions, freeShapes, freeConnectors }),
           };
           nextState = nextState === prev ? { ...prev } : nextState;
           nextState[id] = nextEntry;
@@ -790,13 +1230,15 @@ const StudioShell: React.FC<StudioShellProps> = ({
         const existing = prev[activeTabKey];
         if (existing?.view === next) return prev;
         const positions = (next?.layoutMetadata as any)?.positions ?? {};
+        const freeShapes = (next?.layoutMetadata as any)?.freeShapes ?? [];
+        const freeConnectors = (next?.layoutMetadata as any)?.freeConnectors ?? [];
         return {
           ...prev,
           [activeTabKey]: {
             viewId: activeViewId,
             view: next,
             saveStatus: existing?.saveStatus ?? 'saved',
-            lastSavedSignature: existing?.lastSavedSignature ?? JSON.stringify(positions),
+            lastSavedSignature: existing?.lastSavedSignature ?? stableStringify({ positions, freeShapes, freeConnectors }),
           },
         };
       });
@@ -814,6 +1256,16 @@ const StudioShell: React.FC<StudioShellProps> = ({
   }, [activeTabKey, viewTabs]);
   const elementDragMovedRef = React.useRef(false);
   const suppressNextTapRef = React.useRef(false);
+  const draggingRef = React.useRef(false);
+  const connectionPointerIdRef = React.useRef<number | null>(null);
+  const connectionPointerActiveRef = React.useRef(false);
+  const connectionDragLockRef = React.useRef(false);
+  const [connectionDragLocked, setConnectionDragLocked] = React.useState(false);
+  const connectionDragPositionsRef = React.useRef<Map<string, { x: number; y: number }>>(new Map());
+  const draftAnchorPosRef = React.useRef<{ x: number; y: number } | null>(null);
+  const draftTargetIdRef = React.useRef<string | null>(null);
+  const toolModeRef = React.useRef<StudioToolMode>('SELECT');
+  const relationshipEligibilityRef = React.useRef<Map<string, Set<string>>>(new Map());
   const [alignmentGuides, setAlignmentGuides] = React.useState<{ x: number | null; y: number | null }>({
     x: null,
     y: null,
@@ -839,20 +1291,76 @@ const StudioShell: React.FC<StudioShellProps> = ({
     message: null,
     dragging: false,
   });
+  const relationshipDraftRef = React.useRef(relationshipDraft);
+  const freeConnectorDragRef = React.useRef<{ sourceId: string | null; dragging: boolean }>({
+    sourceId: null,
+    dragging: false,
+  });
+  const freeConnectorSourceIdRef = React.useRef<string | null>(null);
+  const pendingRelationshipTypeRef = React.useRef<RelationshipType | null>(null);
+  const pendingFreeConnectorKindRef = React.useRef<FreeConnectorKind | null>(null);
+  const suppressConnectionTapRef = React.useRef(false);
+
+  const updateRelationshipDraft = React.useCallback((next: {
+    sourceId: string | null;
+    targetId: string | null;
+    valid: boolean | null;
+    message: string | null;
+    dragging: boolean;
+  }) => {
+    relationshipDraftRef.current = next;
+    setRelationshipDraft(next);
+  }, []);
+
+  React.useEffect(() => {
+    relationshipDraftRef.current = relationshipDraft;
+  }, [relationshipDraft]);
+
+  React.useEffect(() => {
+    freeConnectorSourceIdRef.current = freeConnectorSourceId;
+  }, [freeConnectorSourceId]);
+
+  React.useEffect(() => {
+    pendingRelationshipTypeRef.current = pendingRelationshipType;
+  }, [pendingRelationshipType]);
+
+  React.useEffect(() => {
+    toolModeRef.current = toolMode;
+  }, [toolMode]);
+
+  React.useEffect(() => {
+    pendingFreeConnectorKindRef.current = pendingFreeConnectorKind;
+  }, [pendingFreeConnectorKind]);
 
   const [layerVisibility, setLayerVisibility] = React.useState<{
     Business: boolean;
     Application: boolean;
     Technology: boolean;
+    'Implementation & Migration': boolean;
+    Governance: boolean;
   }>({
     Business: true,
     Application: true,
     Technology: true,
+    'Implementation & Migration': true,
+    Governance: true,
   });
   const [gridSize, setGridSize] = React.useState(GRID_SIZE);
   const [snapTemporarilyDisabled, setSnapTemporarilyDisabled] = React.useState(false);
 
+  const snapToGridCenter = React.useCallback(
+    (pos: { x: number; y: number }) => {
+      const size = Math.max(4, Math.round(gridSize));
+      return {
+        x: Math.round(pos.x / size) * size,
+        y: Math.round(pos.y / size) * size,
+      };
+    },
+    [gridSize],
+  );
+
   const [pendingElementType, setPendingElementType] = React.useState<ObjectType | null>(null);
+  const [pendingElementVisualKind, setPendingElementVisualKind] = React.useState<string | null>(null);
   const [placement, setPlacement] = React.useState<{ x: number; y: number } | null>(null);
   const [createModalOpen, setCreateModalOpen] = React.useState(false);
   const [pendingRelationshipType, setPendingRelationshipType] = React.useState<RelationshipType | null>(null);
@@ -866,9 +1374,27 @@ const StudioShell: React.FC<StudioShellProps> = ({
         name: string;
         description: string;
         placement: { x: number; y: number } | null;
+        visualKind?: string | null;
       }
     | null
   >(null);
+  const [pendingElementNameDraft, setPendingElementNameDraft] = React.useState<
+    | {
+        type: ObjectType;
+        name: string;
+        description: string;
+        visualKind?: string | null;
+      }
+    | null
+  >(null);
+  const [pendingFreeShapeDraft, setPendingFreeShapeDraft] = React.useState<
+    | {
+        id: string;
+        kind: FreeShapeKind;
+      }
+    | null
+  >(null);
+  const [freeShapeModalOpen, setFreeShapeModalOpen] = React.useState(false);
 
 
   const handleOpenProperties = React.useCallback(() => {
@@ -896,39 +1422,73 @@ const StudioShell: React.FC<StudioShellProps> = ({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [closeRightPanel, rightPanelMode]);
 
-  const paletteBusinessElements = React.useMemo(() => {
-    const allowed = ['Capability', 'Application'] as const;
-    return allowed
-      .map((type) => OBJECT_TYPE_DEFINITIONS[type])
-      .filter(Boolean);
+  const activeViewpoint = React.useMemo(() => {
+    const view = activeView ?? (viewContext?.viewId ? ViewStore.get(viewContext.viewId) : null);
+    if (!view) return null;
+    return ViewpointRegistry.get(view.viewpointId) ?? null;
+  }, [activeView, viewContext?.viewId]);
+
+  const paletteElementTypes = React.useMemo(() => {
+    const seen = new Set<ObjectType>();
+    return EA_VISUALS.map((visual) => visual.type).filter((type) => {
+      if (seen.has(type)) return false;
+      seen.add(type);
+      return Boolean(OBJECT_TYPE_DEFINITIONS[type]);
+    });
   }, []);
 
-  const paletteTechnologyElements = React.useMemo(() => {
-    const allowed = [
-      'Node',
-      'Compute',
-      'Runtime',
-      'Database',
-      'Storage',
-      'API',
-      'MessageBroker',
-      'IntegrationPlatform',
-      'CloudService',
-    ] as const;
-    return allowed
-      .map((type) => OBJECT_TYPE_DEFINITIONS[type])
-      .filter(Boolean);
-  }, []);
+  const frameworkFilteredElementTypes = React.useMemo(() => {
+    if (!metadata) return paletteElementTypes;
+    return paletteElementTypes.filter((type) => {
+      if (!isObjectTypeAllowedForReferenceFramework(metadata.referenceFramework, type)) return false;
+      if (metadata.referenceFramework === 'Custom') {
+        if (!isCustomFrameworkModelingEnabled('Custom', metadata.frameworkConfig ?? undefined)) return false;
+        return isObjectTypeEnabledForFramework('Custom', metadata.frameworkConfig ?? undefined, type);
+      }
+      return true;
+    });
+  }, [metadata, paletteElementTypes]);
+
+  const visiblePaletteElementTypes = React.useMemo(() => {
+    return frameworkFilteredElementTypes.filter((type) => {
+      const def = OBJECT_TYPE_DEFINITIONS[type];
+      if (!def) return false;
+      return layerVisibility[def.layer] !== false;
+    });
+  }, [frameworkFilteredElementTypes, layerVisibility]);
+
+  const toolboxComponentItems = React.useMemo(() => {
+    const allowedTypeSet = new Set(visiblePaletteElementTypes);
+    return EA_VISUALS.filter((visual) => visual.layer !== 'Technology' && allowedTypeSet.has(visual.type));
+  }, [visiblePaletteElementTypes]);
+
+  const toolboxTechnologyItems = React.useMemo(() => {
+    const allowedTypeSet = new Set(visiblePaletteElementTypes);
+    return EA_VISUALS.filter((visual) => visual.layer === 'Technology' && allowedTypeSet.has(visual.type));
+  }, [visiblePaletteElementTypes]);
 
   const paletteRelationships = React.useMemo(() => {
-    const allowed = ['SUPPORTS', 'DEPENDS_ON', 'COMPOSED_OF', 'CONNECTS_TO', 'USES', 'HOSTED_ON'] as const;
+    const allowed = EA_CONNECTOR_REGISTRY.map((entry) => entry.type) as RelationshipType[];
+    const visibleElementSet = new Set(visiblePaletteElementTypes);
     return allowed
       .map((type) => RELATIONSHIP_TYPE_DEFINITIONS[type])
-      .filter(Boolean);
-  }, []);
+      .filter(Boolean)
+      .filter((relDef) => {
+        if (!relDef) return false;
+        if (layerVisibility[relDef.layer] === false) return false;
+        const pairs = relDef.allowedEndpointPairs ?? [];
+        if (Array.isArray(pairs) && pairs.length > 0) {
+          return pairs.some((pair) => visibleElementSet.has(pair.from) && visibleElementSet.has(pair.to));
+        }
+        return (
+          relDef.fromTypes.some((from) => visibleElementSet.has(from)) &&
+          relDef.toTypes.some((to) => visibleElementSet.has(to))
+        );
+      });
+  }, [layerVisibility, visiblePaletteElementTypes]);
 
-  const technologyVisualByType = React.useMemo(() => {
-    return new Map(TECHNOLOGY_VISUALS.map((entry) => [entry.type, entry] as const));
+  const visualByType = React.useMemo(() => {
+    return new Map(EA_VISUALS.map((entry) => [entry.type, entry] as const));
   }, []);
 
   const renderTypeIcon = React.useCallback(
@@ -940,16 +1500,17 @@ const StudioShell: React.FC<StudioShellProps> = ({
           </span>
         );
       }
-      const tech = technologyVisualByType.get(type as any);
-      if (tech?.icon) {
-        return <img src={tech.icon} alt={type} width={16} height={16} />;
+      const visual = visualByType.get(type as any);
+      if (visual?.icon) {
+        return <img src={visual.icon} alt={type} width={16} height={16} />;
       }
       const layer = OBJECT_TYPE_DEFINITIONS[type]?.layer;
       const layerColor: Record<string, string> = {
-        Strategy: '#b37feb',
         Business: '#95de64',
         Application: '#69b1ff',
         Technology: '#ffd666',
+        'Implementation & Migration': '#ff9c6e',
+        Governance: '#b37feb',
       };
       const bg = layer ? layerColor[layer] : '#d9d9d9';
       return (
@@ -958,7 +1519,7 @@ const StudioShell: React.FC<StudioShellProps> = ({
         </span>
       );
     },
-    [technologyVisualByType],
+    [visualByType],
   );
 
   const applyLayerVisibility = React.useCallback(() => {
@@ -1026,6 +1587,11 @@ const StudioShell: React.FC<StudioShellProps> = ({
         return false;
       }
 
+      if (!hasRegisteredEaShape(type)) {
+        message.error(`EA Shape Registry mapping is missing for element type "${type}". Creation is blocked.`);
+        return false;
+      }
+
       const lifecycleGuard = canCreateObjectTypeForLifecycleCoverage(metadata.lifecycleCoverage, type);
       if (!lifecycleGuard.ok) {
         message.warning(lifecycleGuard.reason);
@@ -1048,6 +1614,87 @@ const StudioShell: React.FC<StudioShellProps> = ({
       x: (renderedX - pan.x) / zoom,
       y: (renderedY - pan.y) / zoom,
     };
+  }, []);
+
+  const findNodeAtPosition = React.useCallback((pos: { x: number; y: number }) => {
+    if (!cyRef.current) return null;
+    const cy = cyRef.current;
+    const nodes = cy.nodes().filter((n) => {
+      if (n.data('draftTarget')) return false;
+      const bb = n.boundingBox({ includeNodes: true, includeLabels: false, includeShadows: false });
+      return pos.x >= bb.x1 && pos.x <= bb.x2 && pos.y >= bb.y1 && pos.y <= bb.y2;
+    });
+    return nodes.length ? nodes[0] : null;
+  }, []);
+
+
+  const getCanvasCenterPosition = React.useCallback(() => {
+    if (!containerRef.current || !cyRef.current) return null;
+    const rect = containerRef.current.getBoundingClientRect();
+    return toCanvasPosition(rect.left + rect.width / 2, rect.top + rect.height / 2);
+  }, [toCanvasPosition]);
+
+  const addFreeShape = React.useCallback(
+    (kind: FreeShapeKind, position: { x: number; y: number }, labelOverride?: string) => {
+      const def = FREE_SHAPE_DEFINITIONS.find((shape) => shape.kind === kind);
+      if (!def) return null;
+      const id = `free-shape-${generateUUID()}`;
+      const nextShape: FreeShape = {
+        id,
+        kind: def.kind,
+        label: labelOverride ?? '',
+        x: position.x,
+        y: position.y,
+        width: def.width,
+        height: def.height,
+      };
+      setFreeShapes((prev) => [...prev, nextShape]);
+      if (cyRef.current) {
+        cyRef.current.add({
+          data: {
+            id,
+            label: nextShape.label,
+            freeShape: true,
+            freeShapeKind: nextShape.kind,
+            width: nextShape.width,
+            height: nextShape.height,
+            shape: def.shape,
+          },
+          position: { x: position.x, y: position.y },
+        });
+        const node = cyRef.current.getElementById(id);
+        if (node && !node.empty()) {
+          node.grabbable(!viewReadOnly);
+          node.select();
+        }
+      }
+      setSelectedFreeShapeId(id);
+      return id;
+    },
+    [viewReadOnly],
+  );
+
+  const openFreeShapeCreate = React.useCallback(
+    (kind: FreeShapeKind, position: { x: number; y: number }) => {
+      const id = addFreeShape(kind, position, '');
+      if (!id) return;
+      setPendingFreeShapeDraft({ id, kind });
+      freeShapeForm.setFieldsValue({ label: '' });
+      setFreeShapeModalOpen(true);
+    },
+    [addFreeShape, freeShapeForm],
+  );
+
+  const updateFreeShape = React.useCallback((id: string, patch: Partial<FreeShape>) => {
+    setFreeShapes((prev) =>
+      prev.map((shape) => (shape.id === id ? { ...shape, ...patch } : shape)),
+    );
+    if (!cyRef.current) return;
+    const node = cyRef.current.getElementById(id);
+    if (!node || node.empty()) return;
+    if (typeof patch.label === 'string') node.data('label', patch.label);
+    if (typeof patch.width === 'number') node.data('width', patch.width);
+    if (typeof patch.height === 'number') node.data('height', patch.height);
   }, []);
 
   const currentRepositoryUpdatedAt = React.useMemo(() => {
@@ -1076,12 +1723,6 @@ const StudioShell: React.FC<StudioShellProps> = ({
     [eaRepository, stagedElementById],
   );
 
-  const activeViewpoint = React.useMemo(() => {
-    const view = activeView ?? (viewContext?.viewId ? ViewStore.get(viewContext.viewId) : null);
-    if (!view) return null;
-    return ViewpointRegistry.get(view.viewpointId) ?? null;
-  }, [activeView, viewContext?.viewId]);
-
   const hierarchyRelationshipType = React.useMemo<RelationshipType | null>(() => {
     if (!activeViewpoint?.allowedRelationshipTypes?.length) return null;
     if (activeViewpoint.allowedRelationshipTypes.includes('DECOMPOSES_TO')) return 'DECOMPOSES_TO';
@@ -1092,18 +1733,16 @@ const StudioShell: React.FC<StudioShellProps> = ({
   const isHierarchicalView = Boolean(hierarchyRelationshipType);
 
   const quickCreateTypeOptions = React.useMemo(() => {
-    const baseTypes = [...paletteBusinessElements, ...paletteTechnologyElements].map((t) => t.type) as ObjectType[];
-    const viewTypes = (activeViewpoint?.allowedElementTypes ?? []) as ObjectType[];
-    const all = [...baseTypes, ...viewTypes];
+    const baseTypes = [...visiblePaletteElementTypes];
     const seen = new Set<ObjectType>();
-    return all
+    return baseTypes
       .filter((type) => {
         if (seen.has(type)) return false;
         seen.add(type);
         return Boolean(OBJECT_TYPE_DEFINITIONS[type]);
       })
       .map((type) => ({ value: type, label: type }));
-  }, [activeViewpoint?.allowedElementTypes, paletteBusinessElements, paletteTechnologyElements]);
+  }, [visiblePaletteElementTypes]);
 
   const resolveChildCreationSpec = React.useCallback(
     (parentType: ObjectType | null): { relationshipType: RelationshipType; childType: ObjectType } | null => {
@@ -1231,6 +1870,11 @@ const StudioShell: React.FC<StudioShellProps> = ({
     return eaRepository?.objects.get(selectedNodeId) ?? null;
   }, [eaRepository, iterativeModeling, selectedNodeId, stagedElementById]);
 
+  const selectedFreeShape = React.useMemo(() => {
+    if (!selectedFreeShapeId) return null;
+    return freeShapes.find((shape) => shape.id === selectedFreeShapeId) ?? null;
+  }, [freeShapes, selectedFreeShapeId]);
+
   const compactSelectedElement = React.useMemo(() => {
     if (stagedSelectedElement) {
       return {
@@ -1261,6 +1905,7 @@ const StudioShell: React.FC<StudioShellProps> = ({
     (edgeId: string) => {
       const edge = cyRef.current?.getElementById(edgeId);
       const edgeData = edge && !edge.empty() ? edge.data() : null;
+      if (edgeData?.governanceWarning) return null;
       const fromId = String(edgeData?.source ?? '');
       const toId = String(edgeData?.target ?? '');
       const type = edgeData?.relationshipType as RelationshipType | undefined;
@@ -1359,21 +2004,155 @@ const StudioShell: React.FC<StudioShellProps> = ({
     if (!cyRef.current) return;
     const cy = cyRef.current;
     cy.getElementById(DRAFT_EDGE_ID)?.remove();
-    cy.getElementById(DRAFT_TARGET_ID)?.remove();
-    cy.nodes().removeClass('validTarget').removeClass('invalidTarget');
+    removeDraftTarget();
+    cy.nodes().removeClass('validTarget').removeClass('invalidTarget').removeClass('validTargetCandidate').removeClass('connectionSource');
+  }, [removeDraftTarget]);
+
+  const lockNodesForConnection = React.useCallback(() => {
+    if (!cyRef.current) return;
+    const cy = cyRef.current;
+    const allNodes = cy.nodes();
+    allNodes.ungrabify();
+    allNodes.lock();
+    const shouldSkip = (node: any) => Boolean(node?.data?.('draftTarget'));
+    cy.nodes().forEach((node) => {
+      if (shouldSkip(node)) return;
+      node.lock();
+      node.grabify(false);
+      node.grabbable(false);
+    });
+  }, []);
+
+  const restoreNodesAfterConnection = React.useCallback(() => {
+    if (!cyRef.current) {
+      connectionDragPositionsRef.current.clear();
+      return;
+    }
+    const cy = cyRef.current;
+    const allNodes = cy.nodes();
+    allNodes.unlock();
+    allNodes.grabify();
+    if (connectionDragPositionsRef.current.size > 0) {
+      connectionDragPositionsRef.current.forEach((pos, id) => {
+        const node = cy.getElementById(id);
+        if (node && !node.empty()) node.position({ x: pos.x, y: pos.y });
+      });
+    }
+    cy.nodes().forEach((node) => {
+      node.unlock();
+      const isStaged = Boolean(node.data('staged'));
+      const isFreeShape = Boolean(node.data('freeShape'));
+      const shouldGrab = !presentationView && !viewReadOnly && (isFreeShape || isStaged || iterativeModeling);
+      node.grabify(shouldGrab);
+      node.grabbable(shouldGrab);
+    });
+    connectionDragPositionsRef.current.clear();
+  }, [iterativeModeling, presentationView, viewReadOnly]);
+
+  const releaseConnectionDragLock = React.useCallback(() => {
+    if (!connectionDragLockRef.current && !connectionDragLocked) return;
+    restoreNodesAfterConnection();
+    connectionDragLockRef.current = false;
+    setConnectionDragLocked(false);
+  }, [connectionDragLocked, restoreNodesAfterConnection]);
+
+  const cancelConnectionInteraction = React.useCallback(() => {
+    if (!relationshipDraftRef.current.dragging) return;
+    updateRelationshipDraft({ sourceId: null, targetId: null, valid: null, message: null, dragging: false });
+    setRelationshipSourceId(null);
+    setRelationshipTargetId(null);
+    clearRelationshipDraftArtifacts();
+    releaseConnectionDragLock();
+    setPendingRelationshipType(null);
+    pendingRelationshipTypeRef.current = null;
+    setToolMode('SELECT');
+    toolModeRef.current = 'SELECT';
+  }, [clearRelationshipDraftArtifacts, releaseConnectionDragLock, updateRelationshipDraft]);
+
+  const ensureDraftTargetId = React.useCallback(() => {
+    if (!draftTargetIdRef.current) {
+      draftTargetIdRef.current = `draft-target-${generateUUID()}`;
+    }
+    return draftTargetIdRef.current;
+  }, []);
+
+  const removeDraftTarget = React.useCallback(() => {
+    if (!cyRef.current) return;
+    cyRef.current.nodes('[draftTarget]').remove();
+    draftTargetIdRef.current = null;
+    draftAnchorPosRef.current = null;
+  }, []);
+
+  const ensureDraftTargetAt = React.useCallback((pos: { x: number; y: number }) => {
+    if (!cyRef.current) return;
+    const cy = cyRef.current;
+    const targetId = ensureDraftTargetId();
+    const target = cy.getElementById(targetId);
+    if (target.empty()) {
+      cy.add({ data: { id: targetId, draftTarget: true }, position: { x: pos.x, y: pos.y }, classes: '' });
+      draftAnchorPosRef.current = { x: pos.x, y: pos.y };
+      return;
+    }
+    target.position({ x: pos.x, y: pos.y });
+    draftAnchorPosRef.current = { x: pos.x, y: pos.y };
+  }, [ensureDraftTargetId]);
+
+  const getFallbackAnchorPos = React.useCallback((sourceId?: string | null) => {
+    if (draftAnchorPosRef.current) return draftAnchorPosRef.current;
+    const fallbackSourceId = sourceId ?? relationshipDraftRef.current.sourceId;
+    if (!fallbackSourceId) return null;
+    const sourcePos = connectionDragPositionsRef.current.get(fallbackSourceId);
+    if (!sourcePos) return null;
+    return { x: sourcePos.x + 40, y: sourcePos.y };
+  }, []);
+
+  const updateDraftEdgeTarget = React.useCallback(
+    (pos?: { x: number; y: number } | null, hoverNode?: any | null, forceSnap = false, sourceId?: string | null) => {
+      if (!cyRef.current) return;
+      const edge = cyRef.current.getElementById(DRAFT_EDGE_ID);
+      if (!edge || edge.empty()) return;
+      if (hoverNode && !hoverNode.empty() && (forceSnap || hoverNode.hasClass('validTargetCandidate'))) {
+        edge.data('target', String(hoverNode.id()));
+        edge.style('target-endpoint', 'outside-to-node');
+        return;
+      }
+      const nextPos = pos ?? getFallbackAnchorPos(sourceId);
+      if (!nextPos) return;
+      ensureDraftTargetAt(nextPos);
+      edge.data('target', ensureDraftTargetId());
+      edge.style('target-endpoint', 'outside-to-node');
+    },
+    [ensureDraftTargetAt, ensureDraftTargetId, getFallbackAnchorPos],
+  );
+
+  const refreshConnectionPositionSnapshot = React.useCallback(() => {
+    if (!cyRef.current) return;
+    const snapshot = new Map<string, { x: number; y: number }>();
+    cyRef.current.nodes().forEach((node) => {
+      const nodeId = String(node.id());
+      if (!nodeId || node.data('draftTarget')) return;
+      snapshot.set(nodeId, { x: node.position('x'), y: node.position('y') });
+    });
+    connectionDragPositionsRef.current = snapshot;
   }, []);
 
   const resetToolDrafts = React.useCallback(() => {
     setPendingElementType(null);
+    setPendingElementVisualKind(null);
     setPendingRelationshipType(null);
+    setPendingFreeConnectorKind(null);
     setRelationshipSourceId(null);
     setRelationshipTargetId(null);
+    setFreeConnectorSourceId(null);
     setRelationshipDraft({ sourceId: null, targetId: null, valid: null, message: null, dragging: false });
+    freeConnectorDragRef.current = { sourceId: null, dragging: false };
+    suppressConnectionTapRef.current = false;
     setPlacementModeActive(false);
     setPlacementGuide(null);
     setCreateHintPos(null);
     clearRelationshipDraftArtifacts();
-  }, [clearRelationshipDraftArtifacts]);
+    releaseConnectionDragLock();
+  }, [clearRelationshipDraftArtifacts, releaseConnectionDragLock]);
 
   React.useEffect(() => {
     if (!viewReadOnly) return;
@@ -1382,10 +2161,78 @@ const StudioShell: React.FC<StudioShellProps> = ({
   }, [resetToolDrafts, viewReadOnly]);
 
   React.useEffect(() => {
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      if (toolModeRef.current !== 'CREATE_RELATIONSHIP') return;
+      cancelConnectionInteraction();
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [cancelConnectionInteraction]);
+
+  React.useEffect(() => {
     if (toolMode === 'CREATE_RELATIONSHIP' && !pendingRelationshipType) {
       setToolMode('SELECT');
+      toolModeRef.current = 'SELECT';
+      pendingRelationshipTypeRef.current = null;
     }
   }, [pendingRelationshipType, toolMode]);
+
+  React.useEffect(() => {
+    if (toolMode === 'CREATE_RELATIONSHIP' || toolMode === 'CREATE_FREE_CONNECTOR') {
+      if (!connectionDragLockRef.current) {
+        connectionDragLockRef.current = true;
+        setConnectionDragLocked(true);
+      }
+      lockNodesForConnection();
+      return;
+    }
+    if (!relationshipDraftRef.current.dragging && !freeConnectorDragRef.current.dragging) {
+      releaseConnectionDragLock();
+    }
+  }, [lockNodesForConnection, releaseConnectionDragLock, toolMode]);
+
+  React.useEffect(() => {
+    if (toolMode !== 'CREATE_RELATIONSHIP' && toolMode !== 'CREATE_FREE_CONNECTOR') {
+      if (connectionDragLockRef.current) {
+        releaseConnectionDragLock();
+      }
+      return;
+    }
+    if (toolMode === 'CREATE_RELATIONSHIP' && !relationshipDraft.dragging && connectionDragLockRef.current) {
+      releaseConnectionDragLock();
+    }
+    if (toolMode === 'CREATE_FREE_CONNECTOR' && !freeConnectorDragRef.current.dragging && connectionDragLockRef.current) {
+      releaseConnectionDragLock();
+    }
+  }, [relationshipDraft.dragging, releaseConnectionDragLock, toolMode]);
+
+  React.useEffect(() => {
+    if (!cyRef.current) return;
+    if (toolMode === 'CREATE_RELATIONSHIP' || toolMode === 'CREATE_FREE_CONNECTOR') return;
+    refreshConnectionPositionSnapshot();
+  }, [refreshConnectionPositionSnapshot, stagedElements.length, stagedRelationships.length, toolMode]);
+
+  React.useEffect(() => {
+    if (toolMode !== 'CREATE_RELATIONSHIP' || !pendingRelationshipType || !cyRef.current) {
+      relationshipEligibilityRef.current = new Map();
+      return;
+    }
+    const cy = cyRef.current;
+    const next = new Map<string, Set<string>>();
+    cy.nodes().forEach((n) => {
+      const sourceId = String(n.id());
+      if (!sourceId) return;
+      next.set(sourceId, getValidTargetsForSource(sourceId, pendingRelationshipType));
+    });
+    relationshipEligibilityRef.current = next;
+  }, [getValidTargetsForSource, pendingRelationshipType, toolMode]);
+
+  React.useEffect(() => {
+    if (toolMode === 'CREATE_FREE_CONNECTOR' && !pendingFreeConnectorKind) {
+      setToolMode('SELECT');
+    }
+  }, [pendingFreeConnectorKind, toolMode]);
 
   React.useEffect(() => {
     if (!presentationView) return;
@@ -1394,7 +2241,7 @@ const StudioShell: React.FC<StudioShellProps> = ({
   }, [presentationView, resetToolDrafts]);
 
   React.useEffect(() => {
-    if (!canDiagramMode && (toolMode === 'CREATE_ELEMENT' || toolMode === 'CREATE_RELATIONSHIP')) {
+    if (!canDiagramMode && (toolMode === 'CREATE_ELEMENT' || toolMode === 'CREATE_RELATIONSHIP' || toolMode === 'CREATE_FREE_CONNECTOR')) {
       resetToolDrafts();
       setToolMode('SELECT');
     }
@@ -1402,6 +2249,7 @@ const StudioShell: React.FC<StudioShellProps> = ({
 
   const cancelCreation = React.useCallback(() => {
     setPendingElementType(null);
+    setPendingElementVisualKind(null);
     setPlacement(null);
     setCreateModalOpen(false);
     setAuditPreviewOpen(false);
@@ -1412,11 +2260,14 @@ const StudioShell: React.FC<StudioShellProps> = ({
     setQuickCreateOpen(false);
     setRepoEndpointOpen(false);
     setRelationshipDraft({ sourceId: null, targetId: null, valid: null, message: null, dragging: false });
+    freeConnectorDragRef.current = { sourceId: null, dragging: false };
+    suppressConnectionTapRef.current = false;
     setPlacementModeActive(false);
     setPlacementGuide(null);
     clearRelationshipDraftArtifacts();
+    releaseConnectionDragLock();
     setPendingChildCreation(null);
-  }, [clearRelationshipDraftArtifacts]);
+  }, [clearRelationshipDraftArtifacts, releaseConnectionDragLock]);
 
   const stagedValidationErrors = React.useMemo(() => {
     if (iterativeModeling) return [] as string[];
@@ -1429,6 +2280,39 @@ const StudioShell: React.FC<StudioShellProps> = ({
 
     for (const el of activeElements) {
       if (!el.name || !el.name.trim()) errors.push(`Element ${el.id}: name is required.`);
+      if (el.type === 'Capability') {
+        const nameText = el.name ?? '';
+        const descriptionText = typeof el.description === 'string' ? el.description : '';
+        const offending = findTechnicalTerm(`${nameText} ${descriptionText}`);
+        if (offending) {
+          errors.push(`Capability ${el.name || el.id}: technical term "${offending}" is not allowed in name/description.`);
+        }
+        const attrs = el.attributes ?? {};
+        const ownerRole = (attrs as any)?.ownerRole;
+        const owningUnit = (attrs as any)?.owningUnit;
+        if (isItOwned(ownerRole) || isItOwned(owningUnit)) {
+          errors.push(`Capability ${el.name || el.id}: ownership must not be assigned to IT.`);
+        }
+        const lifecycleStatus = (attrs as any)?.lifecycleStatus;
+        if (lifecycleStatus === 'Deprecated' || lifecycleStatus === 'Retired') {
+          errors.push(`Capability ${el.name || el.id}: lifecycle must be stable (not Deprecated/Retired).`);
+        }
+      }
+      if (el.type === 'BusinessProcess') {
+        if (!isVerbBasedProcessName(el.name ?? '')) {
+          errors.push(`BusinessProcess ${el.name || el.id}: name must start with a verb (e.g., "Place Order").`);
+        }
+      }
+      if (el.type === 'Application') {
+        const nameText = el.name ?? '';
+        const descriptionText = typeof el.description === 'string' ? el.description : '';
+        const offending = findPhysicalTerm(`${nameText} ${descriptionText}`);
+        if (offending) {
+          errors.push(
+            `Application ${el.name || el.id}: name/description must be logical (no physical infrastructure term "${offending}").`,
+          );
+        }
+      }
       const requiredAttrs = requiredElementAttributes(el.type);
       if (requiredAttrs.length > 0) {
         const attrs = el.attributes ?? {};
@@ -1443,6 +2327,17 @@ const StudioShell: React.FC<StudioShellProps> = ({
           }
         });
       }
+    }
+    if (cyRef.current) {
+      cyRef.current
+        .nodes()
+        .filter((n) => !n.data('freeShape'))
+        .forEach((n) => {
+          const label = String(n.data('label') ?? '').trim();
+          if (!label) {
+            errors.push(`Element ${String(n.id())}: canvas label is missing.`);
+          }
+        });
     }
     for (const rel of activeRelationships) {
       if (!rel.fromId || !rel.toId) errors.push(`Relationship ${rel.id}: missing endpoints.`);
@@ -1545,46 +2440,47 @@ const StudioShell: React.FC<StudioShellProps> = ({
         }
       }
 
-      if (el.type === 'BusinessService' && traceabilityCheckEnabled) {
-        const mappedCaps = countRelationships(
-          (r) =>
-            r.type === 'REALIZED_BY' &&
-            r.toId === el.id &&
-            (typeOf(r.fromId) === 'Capability' || typeOf(r.fromId) === 'SubCapability'),
-        );
-        if (mappedCaps === 0) {
-          errors.push(`BusinessService ${el.name || el.id} must link to at least one Capability via REALIZED_BY.`);
-        }
-      }
-
-      if (el.type === 'Capability' && traceabilityCheckEnabled) {
-        const realizedServiceIds = new Set<string>();
-        relationships.forEach((r) => {
-          if (r.type !== 'REALIZED_BY') return;
-          if (r.fromId !== el.id) return;
-          if (typeOf(r.toId) !== 'BusinessService') return;
-          realizedServiceIds.add(r.toId);
+      if (el.type === 'Capability') {
+        const invalid = relationships.some((r) => {
+          if (r.fromId !== el.id && r.toId !== el.id) return false;
+          const fromType = typeOf(r.fromId);
+          const toType = typeOf(r.toId);
+          const isHierarchy =
+            (r.type === 'DECOMPOSES_TO' || r.type === 'COMPOSED_OF') &&
+            ['Capability', 'SubCapability', 'CapabilityCategory'].includes(String(fromType)) &&
+            ['Capability', 'SubCapability', 'CapabilityCategory'].includes(String(toType));
+          const isRealizedByProcess =
+            r.type === 'REALIZED_BY' && fromType === 'Capability' && toType === 'BusinessProcess' && r.fromId === el.id;
+          return !(isHierarchy || isRealizedByProcess);
         });
-        const supportingAppServices = new Set<string>();
-        realizedServiceIds.forEach((svcId) => {
-          relationships.forEach((r) => {
-            if (r.type !== 'SUPPORTED_BY') return;
-            if (r.fromId !== svcId) return;
-            if (typeOf(r.toId) !== 'ApplicationService') return;
-            supportingAppServices.add(r.toId);
-          });
-        });
-        if (supportingAppServices.size === 0) {
-          errors.push(`Capability ${el.name || el.id} must be supported by at least one ApplicationService.`);
+        if (invalid) {
+          errors.push(
+            `Capability ${el.name || el.id} can only participate in capability hierarchy (DECOMPOSES_TO/COMPOSED_OF) or be realized by a BusinessProcess via REALIZED_BY.`,
+          );
         }
       }
 
       if (el.type === 'ApplicationService' && traceabilityCheckEnabled) {
         const providerCount = countRelationships(
-          (r) => r.type === 'PROVIDES' && r.toId === el.id && typeOf(r.fromId) === 'Application',
+          (r) => r.type === 'PROVIDED_BY' && r.fromId === el.id && typeOf(r.toId) === 'Application',
         );
         if (providerCount !== 1) {
-          errors.push(`ApplicationService ${el.name || el.id} must belong to exactly one Application via PROVIDES.`);
+          errors.push(`ApplicationService ${el.name || el.id} must belong to exactly one Application via PROVIDED_BY.`);
+        }
+        const usageCount = countRelationships(
+          (r) => r.type === 'USED_BY' && r.fromId === el.id && ['Application', 'BusinessProcess'].includes(String(typeOf(r.toId))),
+        );
+        if (usageCount < 1) {
+          errors.push(`ApplicationService ${el.name || el.id} must be used by at least one Application or BusinessProcess via USED_BY.`);
+        }
+      }
+
+      if (el.type === 'Application' && traceabilityCheckEnabled) {
+        const servesCount = countRelationships(
+          (r) => r.type === 'SERVED_BY' && r.toId === el.id && typeOf(r.fromId) === 'BusinessProcess',
+        );
+        if (servesCount < 1) {
+          errors.push(`Application ${el.name || el.id} must be served to at least one BusinessProcess via SERVED_BY.`);
         }
       }
     }
@@ -1598,14 +2494,6 @@ const StudioShell: React.FC<StudioShellProps> = ({
       const target = resolveElementLabel(targetId);
       if (!source || !target) {
         return { valid: false, message: 'Select valid source and target elements.' };
-      }
-      const sourceStaged = stagedElementById.has(sourceId);
-      const targetStaged = stagedElementById.has(targetId);
-      if (!iterativeModeling && !sourceStaged && !targetStaged) {
-        return {
-          valid: false,
-          message: 'At least one endpoint must be staged in Studio. Committed → committed relationships must be created outside Studio.',
-        };
       }
       const relDef = RELATIONSHIP_TYPE_DEFINITIONS[type];
       if (!relDef) return { valid: false, message: 'Unknown relationship type.' };
@@ -1633,14 +2521,12 @@ const StudioShell: React.FC<StudioShellProps> = ({
       if (!relDef) return new Set<string>();
       const validTargets = new Set<string>();
       const pairs = relDef.allowedEndpointPairs ?? [];
-      const sourceStaged = stagedElementById.has(sourceId);
 
       cyRef.current?.nodes().forEach((node) => {
         const targetId = String(node.id());
         if (targetId === sourceId) return;
         const target = resolveElementLabel(targetId);
         if (!target) return;
-        if (!iterativeModeling && !sourceStaged && !stagedElementById.has(targetId)) return;
 
         const valid =
           (Array.isArray(pairs) && pairs.length > 0
@@ -1784,17 +2670,53 @@ const StudioShell: React.FC<StudioShellProps> = ({
     if (!cyRef.current) return;
     const cy = cyRef.current;
     cy.nodes().forEach((node) => {
-      if (!iterativeModeling && !node.data('staged')) return;
+      if (!iterativeModeling && !node.data('staged') && !node.data('freeShape')) return;
       snapPosition(String(node.id()));
     });
     setAlignmentGuides({ x: null, y: null });
   }, [iterativeModeling, snapPosition]);
+
+  const buildFreeShapesFromCanvas = React.useCallback((): FreeShape[] => {
+    if (!cyRef.current) return [];
+    return cyRef.current
+      .nodes('[freeShape]')
+      .toArray()
+      .map((node) => {
+        const data = node.data();
+        return {
+          id: String(node.id()),
+          kind: data.freeShapeKind as FreeShapeKind,
+          label: String(data.label ?? ''),
+          x: node.position('x'),
+          y: node.position('y'),
+          width: Number(data.width ?? node.width() ?? 120),
+          height: Number(data.height ?? node.height() ?? 80),
+        };
+      });
+  }, []);
+
+  const buildFreeConnectorsFromCanvas = React.useCallback((): FreeConnector[] => {
+    if (!cyRef.current) return [];
+    return cyRef.current
+      .edges('[freeConnector]')
+      .toArray()
+      .map((edge) => {
+        const data = edge.data();
+        return {
+          id: String(edge.id()),
+          source: String(data.source ?? edge.source().id()),
+          target: String(data.target ?? edge.target().id()),
+          kind: (data.freeConnectorKind as FreeConnectorKind) ?? 'arrow',
+        };
+      });
+  }, []);
 
   const buildLayoutFromCanvas = React.useCallback((): DesignWorkspaceLayout => {
     if (!cyRef.current) return { nodes: [], edges: [] };
     const cy = cyRef.current;
     const nodes: DesignWorkspaceLayoutNode[] = cy
       .nodes()
+      .filter((n) => !n.data('freeShape'))
       .toArray()
       .map((n) => {
         const id = String(n.id());
@@ -1811,6 +2733,7 @@ const StudioShell: React.FC<StudioShellProps> = ({
 
     const edges: DesignWorkspaceLayoutEdge[] = cy
       .edges()
+      .filter((e) => !e.data('freeConnector') && !e.data('governanceWarning'))
       .toArray()
       .map((e) => {
         const id = String(e.id());
@@ -1842,7 +2765,9 @@ const StudioShell: React.FC<StudioShellProps> = ({
       if (!activeViewId || !activeView || viewReadOnly || activeTabKey === WORKSPACE_TAB_KEY) return;
       setValidationGateOpen(true);
       const { positions } = buildViewPositionsFromCanvas();
-      const signature = JSON.stringify(positions);
+      const nextFreeShapes = buildFreeShapesFromCanvas();
+      const nextFreeConnectors = buildFreeConnectorsFromCanvas();
+      const signature = stableStringify({ positions, freeShapes: nextFreeShapes, freeConnectors: nextFreeConnectors });
       const lastSignature = viewTabStateById[activeTabKey]?.lastSavedSignature ?? '';
       if (signature === lastSignature) {
         if (viewTabStateById[activeTabKey]?.saveStatus === 'dirty') {
@@ -1873,6 +2798,8 @@ const StudioShell: React.FC<StudioShellProps> = ({
         layoutMetadata: {
           ...(activeView.layoutMetadata ?? {}),
           positions,
+          freeShapes: nextFreeShapes,
+          freeConnectors: nextFreeConnectors,
           annotations: (activeView.layoutMetadata as any)?.annotations ?? [],
           filters: (activeView.layoutMetadata as any)?.filters,
         },
@@ -1896,7 +2823,7 @@ const StudioShell: React.FC<StudioShellProps> = ({
       }));
       if (!opts?.silent) message.success('View saved.');
     },
-    [activeTabKey, activeView, activeViewId, buildViewPositionsFromCanvas, viewReadOnly, viewTabStateById],
+    [activeTabKey, activeView, activeViewId, buildFreeConnectorsFromCanvas, buildFreeShapesFromCanvas, buildViewPositionsFromCanvas, viewReadOnly, viewTabStateById],
   );
 
   const buildLayoutFromView = React.useCallback(
@@ -1967,7 +2894,9 @@ const StudioShell: React.FC<StudioShellProps> = ({
   React.useEffect(() => {
     if (!activeViewId || !activeView || activeTabKey === WORKSPACE_TAB_KEY) return;
     const positions = (activeView.layoutMetadata as any)?.positions ?? {};
-    const signature = JSON.stringify(positions);
+    const freeShapes = (activeView.layoutMetadata as any)?.freeShapes ?? [];
+    const freeConnectors = (activeView.layoutMetadata as any)?.freeConnectors ?? [];
+    const signature = stableStringify({ positions, freeShapes, freeConnectors });
     setViewTabStateById((prev) => {
       const existing = prev[activeTabKey];
       if (existing?.lastSavedSignature === signature && existing?.saveStatus === 'saved' && existing?.view === activeView) {
@@ -2221,6 +3150,7 @@ const StudioShell: React.FC<StudioShellProps> = ({
       description?: string;
       placement?: { x: number; y: number } | null;
       id?: string;
+      visualKind?: string | null;
     }) => {
       setValidationGateOpen(true);
       const id = input.id ?? generateElementId(input.type);
@@ -2233,6 +3163,7 @@ const StudioShell: React.FC<StudioShellProps> = ({
             name: input.name,
             description: input.description ?? '',
             elementType: input.type,
+            eaVisualKind: input.visualKind ?? undefined,
             createdAt,
             createdBy: actor,
             lastModifiedAt: createdAt,
@@ -2263,12 +3194,25 @@ const StudioShell: React.FC<StudioShellProps> = ({
       setStagedElements((prev) => [...prev, staged]);
 
       if (cyRef.current) {
+        const visualData = buildEaVisualData({ type: input.type, visualKindOverride: input.visualKind ?? undefined });
         cyRef.current.add({
-          data: { id, label: input.name, elementType: input.type, staged: true },
+          data: {
+            id,
+            label: input.name,
+            elementType: input.type,
+            staged: true,
+            ...visualData,
+          },
           position: input.placement ? { x: input.placement.x, y: input.placement.y } : undefined,
         });
         const node = cyRef.current.getElementById(id);
         if (node && !node.empty()) {
+          node.data('label', input.name);
+          node.data('eaShape', visualData.eaShape);
+          node.data('eaIcon', visualData.eaIcon);
+          node.data('eaColor', visualData.eaColor);
+          node.data('eaBorder', visualData.eaBorder);
+          node.data('eaVisualKind', visualData.eaVisualKind);
           node.grabbable(true);
           node.select();
         }
@@ -2277,11 +3221,13 @@ const StudioShell: React.FC<StudioShellProps> = ({
 
       setSelectedEdgeId(null);
       setSelectedNodeIds([id]);
+      setSelectedFreeShapeId(null);
+      setSelectedFreeConnectorId(null);
 
       return id;
     },
-    [actor, applyRepositoryTransaction],
-  );
+      [actor, applyRepositoryTransaction, relationshipStyleForType],
+    );
 
   const stageRelationship = React.useCallback(
     (input: { fromId: string; toId: string; type: RelationshipType }) => {
@@ -2331,6 +3277,7 @@ const StudioShell: React.FC<StudioShellProps> = ({
             source: input.fromId,
             target: input.toId,
             relationshipType: input.type,
+            relationshipStyle: relationshipStyleForType(input.type),
             staged: true,
           },
         });
@@ -2340,15 +3287,128 @@ const StudioShell: React.FC<StudioShellProps> = ({
 
       setSelectedNodeIds([]);
       setSelectedEdgeId(relationshipId);
+      setSelectedFreeShapeId(null);
+      setSelectedFreeConnectorId(null);
       return relationshipId;
     },
     [actor, applyRepositoryTransaction],
   );
 
+  const formatInlineWarningLabel = React.useCallback((message?: string) => {
+    const base = (message ?? 'Invalid relationship').trim() || 'Invalid relationship';
+    const max = 48;
+    const truncated = base.length > max ? `${base.slice(0, Math.max(0, max - 1))}…` : base;
+    return `⚠ ${truncated}`;
+  }, []);
+
+  const clearGovernanceWarningEdges = React.useCallback(
+    (input: { fromId: string; toId: string; type: RelationshipType }) => {
+      if (!cyRef.current) return;
+      const cy = cyRef.current;
+      cy.edges()
+        .filter((e) =>
+          Boolean(e.data('governanceWarning')) &&
+          String(e.data('relationshipType') ?? '') === input.type &&
+          String(e.data('source') ?? e.source().id()) === input.fromId &&
+          String(e.data('target') ?? e.target().id()) === input.toId,
+        )
+        .remove();
+    },
+    [],
+  );
+
+  const addGovernanceWarningEdge = React.useCallback(
+    (input: { fromId: string; toId: string; type: RelationshipType; message?: string }) => {
+      if (!cyRef.current) return '';
+      clearGovernanceWarningEdges({ fromId: input.fromId, toId: input.toId, type: input.type });
+      const warningId = `warn-rel-${generateUUID()}`;
+      const warningLabel = formatInlineWarningLabel(input.message);
+      cyRef.current.add({
+        data: {
+          id: warningId,
+          source: input.fromId,
+          target: input.toId,
+          relationshipType: input.type,
+          relationshipStyle: relationshipStyleForType(input.type),
+          governanceWarning: true,
+          warningLabel,
+          warningMessage: input.message ?? '',
+        },
+      });
+      return warningId;
+    },
+    [clearGovernanceWarningEdges, formatInlineWarningLabel, relationshipStyleForType],
+  );
+
+  const createRelationshipFromCanvas = React.useCallback(
+    (input: { fromId: string; toId: string; type: RelationshipType }) => {
+      setValidationGateOpen(true);
+      const createdAt = new Date().toISOString();
+      const relationshipId = `rel-${generateUUID()}`;
+      const applyRes = applyRepositoryTransaction((repo) => {
+        const res = repo.addRelationship({
+          id: relationshipId,
+          fromId: input.fromId,
+          toId: input.toId,
+          type: input.type,
+          attributes: {
+            createdAt,
+            createdBy: actor,
+            lastModifiedAt: createdAt,
+            lastModifiedBy: actor,
+            modelingState: 'DRAFT',
+          },
+        });
+        if (!res.ok) return { ok: false, error: res.error } as const;
+        return { ok: true } as const;
+      });
+      if (!applyRes.ok) {
+        return { ok: false, error: applyRes.error } as const;
+      }
+
+      const staged: DesignWorkspaceStagedRelationship = {
+        id: relationshipId,
+        kind: 'relationship',
+        fromId: input.fromId,
+        toId: input.toId,
+        type: input.type,
+        attributes: {},
+        createdAt,
+        createdBy: actor,
+        modelingState: 'DRAFT',
+        status: 'STAGED',
+      };
+
+      setStagedRelationships((prev) => [...prev, staged]);
+
+      if (cyRef.current) {
+        cyRef.current.add({
+          data: {
+            id: relationshipId,
+            source: input.fromId,
+            target: input.toId,
+            relationshipType: input.type,
+            relationshipStyle: relationshipStyleForType(input.type),
+            staged: true,
+          },
+        });
+        const edge = cyRef.current.getElementById(relationshipId);
+        if (edge && !edge.empty()) edge.select();
+      }
+
+      setSelectedNodeIds([]);
+      setSelectedEdgeId(relationshipId);
+      setSelectedFreeShapeId(null);
+      setSelectedFreeConnectorId(null);
+      clearGovernanceWarningEdges({ fromId: input.fromId, toId: input.toId, type: input.type });
+      return { ok: true, id: relationshipId } as const;
+    },
+    [actor, applyRepositoryTransaction, clearGovernanceWarningEdges, relationshipStyleForType],
+  );
+
   const stageExistingElement = React.useCallback(
-    (elementId: string) => {
+    (elementId: string, placement?: { x: number; y: number }) => {
       if (!eaRepository) return;
-      if (stagedElementById.has(elementId)) return;
       const existing = eaRepository.objects.get(elementId);
       if (!existing) {
         message.error('Selected element no longer exists in the repository.');
@@ -2375,20 +3435,60 @@ const StudioShell: React.FC<StudioShellProps> = ({
         status: 'STAGED',
       };
 
-      setStagedElements((prev) => [...prev, staged]);
+      if (!stagedElementById.has(elementId)) {
+        setStagedElements((prev) => [...prev, staged]);
+      }
 
       if (cyRef.current) {
-        const node = cyRef.current.getElementById(existing.id);
+        const cy = cyRef.current;
+        const node = cy.getElementById(existing.id);
+        const visualData = buildEaVisualData({ type: existing.type as ObjectType, attributes: attrs });
         if (node && !node.empty()) {
           node.data('staged', true);
+          node.data('label', name);
+          node.data('elementType', existing.type);
+          node.data('eaShape', visualData.eaShape);
+          node.data('eaIcon', visualData.eaIcon);
+          node.data('eaColor', visualData.eaColor);
+          node.data('eaBorder', visualData.eaBorder);
+          node.data('eaVisualKind', visualData.eaVisualKind);
           node.grabbable(true);
+          if (placement) {
+            node.position({ x: placement.x, y: placement.y });
+          }
           node.select();
+        } else {
+          cy.add({
+            data: {
+              id: existing.id,
+              label: name,
+              elementType: existing.type,
+              staged: true,
+              ...visualData,
+            },
+            position: placement ? { x: placement.x, y: placement.y } : undefined,
+          });
+          const added = cy.getElementById(existing.id);
+          if (added && !added.empty()) {
+            added.data('label', name);
+            added.data('elementType', existing.type);
+            added.data('eaShape', visualData.eaShape);
+            added.data('eaIcon', visualData.eaIcon);
+            added.data('eaColor', visualData.eaColor);
+            added.data('eaBorder', visualData.eaBorder);
+            added.data('eaVisualKind', visualData.eaVisualKind);
+            added.grabbable(true);
+            added.select();
+          }
         }
+        setIsLargeGraph(cy.nodes().length > LARGE_GRAPH_THRESHOLD);
       }
 
       setSelectedEdgeId(null);
       setSelectedNodeIds([existing.id]);
-      message.success('Element staged for editing.');
+      setSelectedFreeShapeId(null);
+      setSelectedFreeConnectorId(null);
+      message.success(placement ? 'Element added to canvas.' : 'Element staged for editing.');
     },
     [actor, eaRepository, stagedElementById],
   );
@@ -2427,6 +3527,7 @@ const StudioShell: React.FC<StudioShellProps> = ({
         const edge = cyRef.current.getElementById(edgeId);
         if (edge && !edge.empty()) {
           edge.data('staged', true);
+          edge.data('relationshipStyle', relationshipStyleForType(resolved.type as RelationshipType));
           edge.select();
         }
       }
@@ -2435,7 +3536,7 @@ const StudioShell: React.FC<StudioShellProps> = ({
       setSelectedEdgeId(edgeId);
       message.success('Relationship staged for editing.');
     },
-    [actor, resolveExistingRelationship, stagedRelationships],
+    [actor, relationshipStyleForType, resolveExistingRelationship, stagedRelationships],
   );
 
   const confirmRelationshipDraft = React.useCallback(() => {
@@ -2467,48 +3568,15 @@ const StudioShell: React.FC<StudioShellProps> = ({
     setRelationshipSourceId(null);
     setRelationshipTargetId(null);
     setRelationshipDraft({ sourceId: null, targetId: null, valid: null, message: null, dragging: false });
-    const relDef = RELATIONSHIP_TYPE_DEFINITIONS[pendingRelationshipType];
-    if (relDef?.attributes?.length) {
-      message.info('Relationship created. Provide required attributes in the Properties panel.');
-    } else {
-      message.success('Relationship created in repository.');
-    }
+    // Relationship properties can be edited later via Inspector.
   }, [pendingRelationshipType, relationshipSourceId, relationshipTargetId, stageRelationship]);
 
   const startChildCreation = React.useCallback(
     (parentId: string) => {
-      if (!parentId) return;
-      if (!canDiagramMode) {
-        message.info('Switch to Design or Model mode to add children.');
-        return;
-      }
-      if (!isHierarchicalView || !hierarchyRelationshipType) {
-        message.info('Child creation is available only in hierarchical viewpoints.');
-        return;
-      }
-      if (viewReadOnly || designWorkspace.status !== 'DRAFT') {
-        message.warning('Workspace is read-only. Reopen draft to add children.');
-        return;
-      }
-      const parent = resolveElementLabel(parentId);
-      if (!parent) {
-        message.error('Parent element could not be resolved.');
-        return;
-      }
-      const spec = resolveChildCreationSpec(parent.type);
-      if (!spec) {
-        message.warning('No compatible child type found for this viewpoint.');
-        return;
-      }
-      if (!validateStudioElementType(spec.childType)) return;
-      const placement = childPlacementForParent(parentId);
-      setQuickCreatePlacement(placement);
-      setQuickCreateType(spec.childType);
-      quickCreateForm.setFieldsValue({ type: spec.childType, name: '', description: '' });
-      setPendingChildCreation({ parentId, relationshipType: spec.relationshipType });
-      setQuickCreateOpen(true);
+      message.info('Create new elements from the EA Toolbox, then connect them to create child relationships.');
+      return;
     },
-    [canDiagramMode, childPlacementForParent, designWorkspace.status, hierarchyRelationshipType, isHierarchicalView, quickCreateForm, resolveChildCreationSpec, resolveElementLabel, validateStudioElementType, viewReadOnly],
+    [],
   );
 
   const handleQuickCreate = React.useCallback(
@@ -2703,19 +3771,8 @@ const StudioShell: React.FC<StudioShellProps> = ({
       }
 
       if (event.key.toLowerCase() === 'c') {
-        if (viewReadOnly) return;
-        if (designWorkspace.status !== 'DRAFT') return;
-        if (!canModelMode) {
-          message.info('Switch to Model mode to create elements.');
-          return;
-        }
         event.preventDefault();
-        const placement = getCanvasCenter();
-        setQuickCreatePlacement(placement);
-        setQuickCreateType(null);
-        quickCreateForm.setFieldsValue({ type: undefined as any, name: '', description: '' });
-        setPendingChildCreation(null);
-        setQuickCreateOpen(true);
+        message.info('Create new elements from the EA Toolbox. Drag from Explorer to reuse existing elements.');
         return;
       }
 
@@ -2745,7 +3802,7 @@ const StudioShell: React.FC<StudioShellProps> = ({
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
     };
-  }, [canDiagramMode, cancelCreation, deleteStagedElement, deleteStagedRelationship, designWorkspace.status, getCanvasCenter, quickCreateForm, resetToolDrafts, selectedStagedElements, stagedSelectedRelationship, viewReadOnly]);
+  }, [cancelCreation, deleteStagedElement, deleteStagedRelationship, resetToolDrafts, selectedStagedElements, stagedSelectedRelationship, viewReadOnly]);
 
   const commitWorkspace = React.useCallback(() => {
     setValidationGateOpen(true);
@@ -3073,6 +4130,11 @@ const StudioShell: React.FC<StudioShellProps> = ({
               label: 'data(label)',
               'text-valign': 'center',
               'text-halign': 'center',
+              'text-wrap': 'wrap',
+              'text-max-width': 120,
+              'text-background-color': '#ffffff',
+              'text-background-opacity': 0.6,
+              'text-background-padding': 2,
               'background-color': '#f0f0f0',
               color: '#1f1f1f',
               'border-color': '#d9d9d9',
@@ -3082,35 +4144,168 @@ const StudioShell: React.FC<StudioShellProps> = ({
               width: 120,
               height: 48,
               shape: 'round-rectangle',
+              'z-index': 10,
             },
           },
-          ...TECHNOLOGY_VISUALS.map((entry) => ({
-            selector: `node[elementType = "${entry.type}"]`,
+          {
+            selector: 'node[eaShape]',
             style: {
-              'background-color': entry.color,
-              'border-color': entry.border,
-              'background-image': entry.icon,
-              'background-fit': 'contain',
-              'background-width': 16,
-              'background-height': 16,
-              'background-position-x': 8,
-              'background-position-y': '50%',
-              'text-margin-x': 8,
+              shape: 'data(eaShape)',
             },
-          })),
+          },
+          {
+            selector: 'node[eaIcon]',
+            style: {
+              'background-image': 'data(eaIcon)',
+              'background-fit': 'contain',
+              'background-width': '100%',
+              'background-height': '100%',
+              'background-position-x': '50%',
+              'background-position-y': '50%',
+              'text-margin-x': 0,
+              'background-color': 'transparent',
+              'border-color': 'transparent',
+            },
+          },
           {
             selector: 'edge',
             style: {
-              width: 1.5,
+              width: 2,
               'line-color': '#8c8c8c',
               'target-arrow-color': '#8c8c8c',
               'target-arrow-shape': 'vee',
-              'curve-style': 'bezier',
+              'curve-style': 'straight',
+              'arrow-scale': 1.2,
+              'target-endpoint': 'outside-to-node',
+              'z-index': 1,
+              'z-compound-depth': 'bottom',
               label: 'data(relationshipType)',
               'font-size': 8,
               'text-background-color': '#fff',
               'text-background-opacity': 0.7,
               'text-rotation': 'autorotate',
+            },
+          },
+          {
+            selector: 'edge[governanceWarning]',
+            style: {
+              width: 1.6,
+              'line-color': '#ff4d4f',
+              'target-arrow-color': '#ff4d4f',
+              'target-arrow-shape': 'triangle',
+              'line-style': 'dashed',
+              label: 'data(warningLabel)',
+              color: '#a8071a',
+              'font-size': 8,
+              'text-background-color': '#fff1f0',
+              'text-background-opacity': 0.85,
+              'text-background-padding': 2,
+              'text-rotation': 'autorotate',
+            },
+          },
+          {
+            selector: 'edge[relationshipStyle = "dependency"]',
+            style: {
+              'line-style': 'dashed',
+              'target-arrow-shape': 'vee',
+              width: 2,
+            },
+          },
+          {
+            selector: 'edge[relationshipStyle = "directed"]',
+            style: {
+              'target-arrow-shape': 'vee',
+              width: 2,
+            },
+          },
+          {
+            selector: 'edge[relationshipStyle = "association"]',
+            style: {
+              'line-style': 'solid',
+              'target-arrow-shape': 'none',
+              width: 2,
+            },
+          },
+          {
+            selector: 'edge[relationshipStyle = "flow"]',
+            style: {
+              'line-style': 'dotted',
+              'target-arrow-shape': 'triangle',
+              width: 2,
+            },
+          },
+          {
+            selector: 'node[freeShape]',
+            style: {
+              label: 'data(label)',
+              'text-valign': 'center',
+              'text-halign': 'center',
+              'text-wrap': 'wrap',
+              'text-max-width': 140,
+              'background-color': '#ffffff',
+              'background-opacity': 1,
+              'border-color': '#8c8c8c',
+              'border-width': 1,
+              'border-style': 'dashed',
+              'font-weight': 500,
+              width: 'data(width)',
+              height: 'data(height)',
+              shape: 'data(shape)',
+            },
+          },
+          {
+            selector: 'node[freeShapeKind = "text"]',
+            style: {
+              'background-opacity': 0,
+              'border-style': 'dotted',
+            },
+          },
+          {
+            selector: 'node[freeShapeKind = "annotation"]',
+            style: {
+              'background-color': '#fffbe6',
+              'border-color': '#faad14',
+            },
+          },
+          {
+            selector: 'node[freeShapeKind = "group"]',
+            style: {
+              'background-color': '#f5f5f5',
+              'border-style': 'dashed',
+              'border-width': 1.5,
+            },
+          },
+          {
+            selector: 'node[freeShapeKind = "boundary"]',
+            style: {
+              'background-opacity': 0,
+              'border-style': 'dotted',
+              'border-width': 1.5,
+            },
+          },
+          {
+            selector: 'edge[freeConnector]',
+            style: {
+              width: 1.5,
+              'line-color': '#faad14',
+              'target-arrow-color': '#faad14',
+              'target-arrow-shape': 'none',
+              'line-style': 'dashed',
+              label: '',
+            },
+          },
+          {
+            selector: 'edge[freeConnectorKind = "arrow"]',
+            style: {
+              'target-arrow-shape': 'triangle',
+              'line-style': 'dashed',
+            },
+          },
+          {
+            selector: 'edge[freeConnectorKind = "line"]',
+            style: {
+              'target-arrow-shape': 'none',
+              'line-style': 'solid',
             },
           },
           {
@@ -3147,11 +4342,49 @@ const StudioShell: React.FC<StudioShellProps> = ({
           {
             selector: 'edge[draft]',
             style: {
+              width: 2,
               'line-color': '#91caff',
               'target-arrow-color': '#91caff',
+              'target-arrow-shape': 'none',
+              'curve-style': 'straight',
+              label: '',
+              'text-opacity': 0,
+              'text-background-opacity': 0,
+              opacity: 1,
+            },
+          },
+          {
+            selector: 'edge[draft][relationshipStyle = "dependency"]',
+            style: {
               'line-style': 'dashed',
-              'target-arrow-shape': 'triangle',
-              'curve-style': 'bezier',
+              'target-arrow-shape': 'none',
+            },
+          },
+          {
+            selector: 'edge[draft][relationshipStyle = "association"]',
+            style: {
+              'line-style': 'solid',
+              'target-arrow-shape': 'none',
+            },
+          },
+          {
+            selector: 'edge[draft][relationshipStyle = "flow"]',
+            style: {
+              'line-style': 'dotted',
+              'target-arrow-shape': 'none',
+            },
+          },
+          {
+            selector: 'edge[draft][freeConnectorKind = "line"]',
+            style: {
+              'target-arrow-shape': 'none',
+              'line-style': 'solid',
+            },
+          },
+          {
+            selector: 'edge.dragEdgesHidden',
+            style: {
+              display: 'none',
             },
           },
           {
@@ -3163,12 +4396,24 @@ const StudioShell: React.FC<StudioShellProps> = ({
             },
           },
           {
+            selector: 'node.connectionSource',
+            style: {
+              'border-color': '#1677ff',
+              'border-width': 2,
+              'border-style': 'solid',
+              'box-shadow-color': '#91caff',
+              'box-shadow-blur': 6,
+              'box-shadow-spread': 2,
+            },
+          },
+          {
             selector: 'node[draftTarget]',
             style: {
               opacity: 0,
               width: 1,
               height: 1,
               'border-width': 0,
+              events: 'no',
             },
           },
         ],
@@ -3183,55 +4428,88 @@ const StudioShell: React.FC<StudioShellProps> = ({
     const applyToolMode = () => {
       if (!cyRef.current) return;
       const cy = cyRef.current;
-      const panEnabled = toolMode === 'PAN';
-      const selectEnabled = toolMode === 'SELECT';
+      const currentToolMode = toolModeRef.current;
+      const panEnabled = currentToolMode === 'PAN';
+      const selectEnabled = currentToolMode === 'SELECT';
+      const connectionMode = currentToolMode === 'CREATE_RELATIONSHIP' || currentToolMode === 'CREATE_FREE_CONNECTOR';
       cy.userPanningEnabled(panEnabled);
       cy.boxSelectionEnabled(selectEnabled);
-      cy.autoungrabify(panEnabled);
+      cy.autoungrabify(panEnabled || connectionDragLockRef.current || connectionMode);
     };
 
     applyToolMode();
 
-
     const handleTap = (evt: any) => {
       if (!cyRef.current) return;
+      const currentToolMode = toolModeRef.current;
+      const currentRelationshipType = pendingRelationshipTypeRef.current;
+      const currentFreeConnectorKind = pendingFreeConnectorKindRef.current;
 
-      if (toolMode === 'CREATE_ELEMENT' && suppressNextTapRef.current) {
+      if (currentToolMode === 'CREATE_ELEMENT' && suppressNextTapRef.current) {
         suppressNextTapRef.current = false;
         return;
       }
 
-      if (toolMode === 'CREATE_ELEMENT' && pendingElementType && placementModeActive && evt.target === cyRef.current) {
-        if (!validateStudioElementType(pendingElementType)) return;
-        const pos = evt.position ?? evt.cyPosition ?? { x: 0, y: 0 };
-        const draftId = `draft-${generateUUID()}`;
-        const name = `New ${pendingElementType}`;
-        const id = stageElement({
-          id: draftId,
-          type: pendingElementType,
-          name,
-          description: '',
-          placement: { x: pos.x, y: pos.y },
-        });
-        if (!id) return;
-        openPropertiesPanel({ elementId: id, elementType: pendingElementType, dock: 'right', readOnly: false });
-        setToolMode('SELECT');
-        resetToolDrafts();
+      if (suppressConnectionTapRef.current) {
+        suppressConnectionTapRef.current = false;
         return;
       }
 
-      if (toolMode === 'CREATE_RELATIONSHIP' && pendingRelationshipType && evt.target !== cyRef.current && !relationshipDraft.dragging) {
+      if (currentToolMode === 'CREATE_FREE_CONNECTOR' && evt.target === cyRef.current) {
+        setFreeConnectorSourceId(null);
+        return;
+      }
+
+      if (currentToolMode === 'CREATE_ELEMENT' && pendingElementType && placementModeActive && evt.target === cyRef.current) {
+        if (!validateStudioElementType(pendingElementType)) return;
+        const pos = evt.position ?? evt.cyPosition ?? { x: 0, y: 0 };
+        if (pendingElementNameDraft) {
+          const id = stageElement({
+            type: pendingElementNameDraft.type,
+            name: pendingElementNameDraft.name,
+            description: pendingElementNameDraft.description,
+            placement: { x: pos.x, y: pos.y },
+            visualKind: pendingElementNameDraft.visualKind,
+          });
+          if (!id) return;
+          openPropertiesPanel({ elementId: id, elementType: pendingElementNameDraft.type, dock: 'right', readOnly: false });
+          setPendingElementNameDraft(null);
+          setPendingElementType(null);
+          setPlacement(null);
+          setToolMode('SELECT');
+          setPlacementModeActive(false);
+          resetToolDrafts();
+          return;
+        }
+        setPlacement({ x: pos.x, y: pos.y });
+        form.setFieldsValue({ name: `New ${pendingElementLabel ?? pendingElementType}`, description: '' });
+        setCreateModalOpen(true);
+        setToolMode('SELECT');
+        setPlacementModeActive(false);
+        return;
+      }
+
+      if (
+        currentToolMode === 'CREATE_RELATIONSHIP' &&
+        currentRelationshipType &&
+        evt.target !== cyRef.current &&
+        !relationshipDraftRef.current.dragging
+      ) {
         const node = evt.target;
         const id = String(node.id());
         if (!id) return;
 
         if (!relationshipSourceId) {
           setRelationshipSourceId(id);
-          setRelationshipDraft({
+          if (cyRef.current) {
+            cyRef.current.nodes().removeClass('connectionSource');
+            node.addClass('connectionSource');
+          }
+          updateRelationshipDraft({
             sourceId: id,
             targetId: null,
             valid: null,
-            message: 'Source selected. Choose a target to validate.',
+            message: 'Source selected. Choose a target to connect.',
             dragging: false,
           });
           return;
@@ -3239,63 +4517,155 @@ const StudioShell: React.FC<StudioShellProps> = ({
 
         if (relationshipSourceId === id) return;
 
-        const validation = validateRelationshipEndpoints(relationshipSourceId, id, pendingRelationshipType);
+        const validation = validateRelationshipEndpoints(relationshipSourceId, id, currentRelationshipType);
         if (!validation.valid) {
-          // Reject invalid combinations silently.
+          addGovernanceWarningEdge({
+            fromId: relationshipSourceId,
+            toId: id,
+            type: pendingRelationshipType,
+            message: validation.message ?? 'Invalid relationship.',
+          });
           setRelationshipSourceId(null);
           setRelationshipTargetId(null);
+          updateRelationshipDraft({ sourceId: null, targetId: null, valid: false, message: validation.message ?? null, dragging: false });
+          clearRelationshipDraftArtifacts();
           return;
         }
 
-        setRelationshipTargetId(id);
-        setRelationshipDraft({
-          sourceId: relationshipSourceId,
-          targetId: id,
-          valid: true,
-          message: 'Target selected. Confirm or cancel to continue.',
-          dragging: false,
+        const creation = createRelationshipFromCanvas({
+          fromId: relationshipSourceId,
+          toId: id,
+          type: currentRelationshipType,
         });
+        if (!creation.ok) {
+          addGovernanceWarningEdge({
+            fromId: relationshipSourceId,
+            toId: id,
+            type: pendingRelationshipType,
+            message: creation.error ?? 'Invalid relationship.',
+          });
+        }
+        setRelationshipSourceId(null);
+        setRelationshipTargetId(null);
+        updateRelationshipDraft({ sourceId: null, targetId: null, valid: null, message: null, dragging: false });
+        clearRelationshipDraftArtifacts();
+      }
+
+      if (currentToolMode === 'CREATE_FREE_CONNECTOR' && currentFreeConnectorKind && evt.target !== cyRef.current) {
+        const node = evt.target;
+        const id = String(node.id());
+        if (!id) return;
+        if (!freeConnectorSourceId) {
+          setFreeConnectorSourceId(id);
+          message.info('Free connector: choose a target node.');
+          return;
+        }
+        if (freeConnectorSourceId === id) return;
+        const edgeId = `free-conn-${generateUUID()}`;
+        cyRef.current?.add({
+          data: {
+            id: edgeId,
+            source: freeConnectorSourceId,
+            target: id,
+            freeConnector: true,
+            freeConnectorKind: currentFreeConnectorKind,
+          },
+        });
+        setFreeConnectors((prev) => [...prev, { id: edgeId, source: freeConnectorSourceId, target: id, kind: currentFreeConnectorKind }]);
+        setFreeConnectorSourceId(null);
+        setToolMode('SELECT');
+        setPendingFreeConnectorKind(null);
       }
     };
 
     const handleDragStart = (evt: any) => {
       if (!cyRef.current) return;
-      if (toolMode !== 'CREATE_RELATIONSHIP' || !pendingRelationshipType) return;
+      const currentToolMode = toolModeRef.current;
+      const currentRelationshipType = pendingRelationshipTypeRef.current;
+      const currentFreeConnectorKind = pendingFreeConnectorKindRef.current;
       const node = evt.target;
       if (!node || node === cyRef.current) return;
+      if (node.data('draftTarget')) return;
       const sourceId = String(node.id());
       if (!sourceId) return;
       const cy = cyRef.current;
-      const validTargets = getValidTargetsForSource(sourceId, pendingRelationshipType);
+      const dragPos =
+        evt?.position ??
+        evt?.cyPosition ??
+        connectionDragPositionsRef.current.get(sourceId) ??
+        undefined;
+      if (currentToolMode === 'CREATE_FREE_CONNECTOR' && currentFreeConnectorKind) {
+        suppressConnectionTapRef.current = true;
+        freeConnectorDragRef.current = { sourceId, dragging: true };
+        setFreeConnectorSourceId(sourceId);
+        if (cy.getElementById(DRAFT_EDGE_ID).empty()) {
+          cy.add({
+            data: {
+              id: DRAFT_EDGE_ID,
+              source: sourceId,
+              target: sourceId,
+              draft: true,
+              freeConnectorKind: currentFreeConnectorKind,
+            },
+          });
+        } else {
+          const edge = cy.getElementById(DRAFT_EDGE_ID);
+          edge.data('source', sourceId);
+          edge.data('target', sourceId);
+          edge.data('freeConnectorKind', currentFreeConnectorKind);
+        }
+        updateDraftEdgeTarget(dragPos, null, true, sourceId);
+        return;
+      }
+      if (!currentRelationshipType) return;
+      if (relationshipDraftRef.current.dragging && relationshipDraftRef.current.sourceId === sourceId) return;
+      if (!cy.getElementById(DRAFT_EDGE_ID).empty()) {
+        cy.getElementById(DRAFT_EDGE_ID).remove();
+      }
+      removeDraftTarget();
+      cy.nodes().removeClass('connectionSource');
+      node.addClass('connectionSource');
+      connectionPointerActiveRef.current = true;
+      connectionDragLockRef.current = true;
+      setConnectionDragLocked(true);
+      lockNodesForConnection();
+      const pointerId = evt?.originalEvent?.pointerId;
+      if (typeof pointerId === 'number') {
+        connectionPointerIdRef.current = pointerId;
+        if (containerRef.current) {
+          try {
+            containerRef.current.setPointerCapture(pointerId);
+          } catch {
+            // Best-effort only.
+          }
+        }
+      }
+      suppressConnectionTapRef.current = true;
+      const validTargets = relationshipEligibilityRef.current.get(sourceId) || getValidTargetsForSource(sourceId, currentRelationshipType);
 
       cy.nodes().forEach((n) => {
         const id = String(n.id());
         if (id === sourceId) return;
         n.removeClass('validTarget');
         n.removeClass('invalidTarget');
-        if (validTargets.has(id)) n.addClass('validTarget');
+        n.removeClass('validTargetCandidate');
+        if (validTargets.has(id)) n.addClass('validTargetCandidate');
       });
 
-      if (cy.getElementById(DRAFT_TARGET_ID).empty()) {
-        cy.add({ data: { id: DRAFT_TARGET_ID, draftTarget: true }, position: node.position(), classes: '' });
-      }
-      if (cy.getElementById(DRAFT_EDGE_ID).empty()) {
-        cy.add({
-          data: {
-            id: DRAFT_EDGE_ID,
-            source: sourceId,
-            target: DRAFT_TARGET_ID,
-            draft: true,
-          },
-        });
-      } else {
-        const edge = cy.getElementById(DRAFT_EDGE_ID);
-        edge.data('source', sourceId);
-        edge.data('target', DRAFT_TARGET_ID);
-      }
+      cy.add({
+        data: {
+          id: DRAFT_EDGE_ID,
+          source: sourceId,
+          target: sourceId,
+          draft: true,
+          relationshipStyle: relationshipStyleForType(currentRelationshipType),
+          relationshipType: currentRelationshipType,
+        },
+      });
+      updateDraftEdgeTarget(dragPos, null, true, sourceId);
       setRelationshipSourceId(sourceId);
       setRelationshipTargetId(null);
-      setRelationshipDraft({
+      updateRelationshipDraft({
         sourceId,
         targetId: null,
         valid: null,
@@ -3305,16 +4675,33 @@ const StudioShell: React.FC<StudioShellProps> = ({
     };
 
     const handleDragOverNode = (evt: any) => {
-      if (toolMode !== 'CREATE_RELATIONSHIP' || !pendingRelationshipType) return;
-      if (!relationshipDraft.dragging || !relationshipDraft.sourceId) return;
+      const currentToolMode = toolModeRef.current;
+      const currentRelationshipType = pendingRelationshipTypeRef.current;
+      if (currentToolMode !== 'CREATE_RELATIONSHIP' || !currentRelationshipType) return;
+      if (!relationshipDraftRef.current.dragging || !relationshipDraftRef.current.sourceId) return;
+      if (!cyRef.current) return;
+      if (cyRef.current.getElementById(DRAFT_EDGE_ID).empty()) return;
       const node = evt.target;
       if (!node || node === cyRef.current) return;
       const targetId = String(node.id());
-      if (!targetId || targetId === relationshipDraft.sourceId) return;
-      if (!node.hasClass('validTarget')) return;
-      const validation = validateRelationshipEndpoints(relationshipDraft.sourceId, targetId, pendingRelationshipType);
-      setRelationshipDraft({
-        sourceId: relationshipDraft.sourceId,
+      if (!targetId || targetId === relationshipDraftRef.current.sourceId) return;
+      cyRef.current?.nodes().removeClass('validTarget').removeClass('invalidTarget');
+      const validation = validateRelationshipEndpoints(relationshipDraftRef.current.sourceId, targetId, currentRelationshipType);
+      cyRef.current?.nodes().removeClass('validTarget').removeClass('invalidTarget');
+      if (validation.valid) {
+        node.addClass('validTarget');
+      } else {
+        node.addClass('invalidTarget');
+      }
+      const edge = cyRef.current.getElementById(DRAFT_EDGE_ID);
+      if (!edge.empty()) {
+        if (validation.valid) {
+          edge.data('target', targetId);
+          edge.style('target-endpoint', 'outside-to-node');
+        }
+      }
+      updateRelationshipDraft({
+        sourceId: relationshipDraftRef.current.sourceId,
         targetId,
         valid: validation.valid,
         message: validation.message,
@@ -3322,157 +4709,311 @@ const StudioShell: React.FC<StudioShellProps> = ({
       });
     };
 
+    const handleDragOutNode = (evt: any) => {
+      const currentToolMode = toolModeRef.current;
+      const currentRelationshipType = pendingRelationshipTypeRef.current;
+      if (currentToolMode !== 'CREATE_RELATIONSHIP' || !currentRelationshipType) return;
+      if (!relationshipDraftRef.current.dragging) return;
+      if (!cyRef.current) return;
+      if (cyRef.current.getElementById(DRAFT_EDGE_ID).empty()) return;
+      const node = evt.target;
+      if (!node || node === cyRef.current) return;
+      node.removeClass('validTarget');
+      node.removeClass('invalidTarget');
+      const edge = cyRef.current.getElementById(DRAFT_EDGE_ID);
+      if (!edge.empty()) {
+        updateDraftEdgeTarget(getFallbackAnchorPos(relationshipDraftRef.current.sourceId), null, false, relationshipDraftRef.current.sourceId);
+      }
+    };
+
     const handleDragEnd = (evt: any) => {
-      if (toolMode !== 'CREATE_RELATIONSHIP' || !pendingRelationshipType) return;
-      if (!relationshipDraft.dragging || !relationshipDraft.sourceId) return;
+      const currentToolMode = toolModeRef.current;
+      const currentRelationshipType = pendingRelationshipTypeRef.current;
+      if (currentToolMode === 'CREATE_FREE_CONNECTOR' && freeConnectorDragRef.current.dragging) {
+        const node = evt.target;
+        if (!node || node === cyRef.current) {
+          freeConnectorDragRef.current = { sourceId: null, dragging: false };
+          setFreeConnectorSourceId(null);
+          cyRef.current?.getElementById(DRAFT_EDGE_ID)?.remove();
+          removeDraftTarget();
+          return;
+        }
+        const targetId = String(node.id());
+        const sourceId = freeConnectorDragRef.current.sourceId;
+        if (!targetId || !sourceId || targetId === sourceId) {
+          freeConnectorDragRef.current = { sourceId: null, dragging: false };
+          setFreeConnectorSourceId(null);
+          cyRef.current?.getElementById(DRAFT_EDGE_ID)?.remove();
+          removeDraftTarget();
+          return;
+        }
+        const edgeId = `free-conn-${generateUUID()}`;
+        const connectorKind = pendingFreeConnectorKindRef.current ?? 'arrow';
+        cyRef.current?.add({
+          data: {
+            id: edgeId,
+            source: sourceId,
+            target: targetId,
+            freeConnector: true,
+            freeConnectorKind: connectorKind,
+          },
+        });
+        setFreeConnectors((prev) => [...prev, { id: edgeId, source: sourceId, target: targetId, kind: connectorKind }]);
+        freeConnectorDragRef.current = { sourceId: null, dragging: false };
+        setFreeConnectorSourceId(null);
+        setToolMode('SELECT');
+        setPendingFreeConnectorKind(null);
+        cyRef.current?.getElementById(DRAFT_EDGE_ID)?.remove();
+        removeDraftTarget();
+        return;
+      }
+      if (currentToolMode !== 'CREATE_RELATIONSHIP' || !currentRelationshipType) return;
+      if (!relationshipDraftRef.current.dragging || !relationshipDraftRef.current.sourceId) return;
       const node = evt.target;
       if (!node || node === cyRef.current) {
-        setRelationshipDraft({ sourceId: null, targetId: null, valid: null, message: null, dragging: false });
+        updateRelationshipDraft({ sourceId: null, targetId: null, valid: null, message: null, dragging: false });
         setRelationshipSourceId(null);
         setRelationshipTargetId(null);
         cyRef.current?.getElementById(DRAFT_EDGE_ID)?.remove();
-        cyRef.current?.getElementById(DRAFT_TARGET_ID)?.remove();
-        cyRef.current?.nodes().removeClass('validTarget').removeClass('invalidTarget');
+        removeDraftTarget();
+        cyRef.current?.nodes().removeClass('validTarget').removeClass('invalidTarget').removeClass('validTargetCandidate');
+        releaseConnectionDragLock();
+        setPendingRelationshipType(null);
+        pendingRelationshipTypeRef.current = null;
+        setToolMode('SELECT');
+        toolModeRef.current = 'SELECT';
         return;
       }
 
       const targetId = String(node.id());
-      if (!targetId || targetId === relationshipDraft.sourceId) {
-        setRelationshipDraft({ sourceId: null, targetId: null, valid: null, message: null, dragging: false });
+      if (!targetId || targetId === relationshipDraftRef.current.sourceId) {
+        updateRelationshipDraft({ sourceId: null, targetId: null, valid: null, message: null, dragging: false });
         setRelationshipSourceId(null);
         setRelationshipTargetId(null);
         cyRef.current?.getElementById(DRAFT_EDGE_ID)?.remove();
-        cyRef.current?.getElementById(DRAFT_TARGET_ID)?.remove();
-        cyRef.current?.nodes().removeClass('validTarget').removeClass('invalidTarget');
+        removeDraftTarget();
+        cyRef.current?.nodes().removeClass('validTarget').removeClass('invalidTarget').removeClass('validTargetCandidate');
+        releaseConnectionDragLock();
+        setPendingRelationshipType(null);
+        pendingRelationshipTypeRef.current = null;
+        setToolMode('SELECT');
+        toolModeRef.current = 'SELECT';
         return;
       }
 
-      if (!node.hasClass('validTarget')) {
-        setRelationshipDraft({
-          sourceId: relationshipDraft.sourceId,
-          targetId,
-          valid: false,
-          message: 'Target is not valid for this relationship type.',
-          dragging: false,
-        });
+      if (!node.hasClass('validTargetCandidate')) {
+        updateRelationshipDraft({ sourceId: null, targetId: null, valid: false, message: null, dragging: false });
+        setRelationshipSourceId(null);
+        setRelationshipTargetId(null);
         cyRef.current?.getElementById(DRAFT_EDGE_ID)?.remove();
-        cyRef.current?.getElementById(DRAFT_TARGET_ID)?.remove();
-        cyRef.current?.nodes().removeClass('validTarget').removeClass('invalidTarget');
+        removeDraftTarget();
+        cyRef.current?.nodes().removeClass('validTarget').removeClass('invalidTarget').removeClass('validTargetCandidate');
+        releaseConnectionDragLock();
+        setPendingRelationshipType(null);
+        pendingRelationshipTypeRef.current = null;
+        setToolMode('SELECT');
+        toolModeRef.current = 'SELECT';
         return;
       }
 
-      const validation = validateRelationshipEndpoints(relationshipDraft.sourceId, targetId, pendingRelationshipType);
+      const validation = validateRelationshipEndpoints(relationshipDraftRef.current.sourceId, targetId, currentRelationshipType);
       if (!validation.valid) {
-        setRelationshipDraft({
-          sourceId: relationshipDraft.sourceId,
-          targetId,
-          valid: false,
-          message: validation.message,
-          dragging: false,
-        });
+        updateRelationshipDraft({ sourceId: null, targetId: null, valid: false, message: null, dragging: false });
+        setRelationshipSourceId(null);
+        setRelationshipTargetId(null);
         cyRef.current?.getElementById(DRAFT_EDGE_ID)?.remove();
-        cyRef.current?.getElementById(DRAFT_TARGET_ID)?.remove();
-        cyRef.current?.nodes().removeClass('validTarget').removeClass('invalidTarget');
+        removeDraftTarget();
+        cyRef.current?.nodes().removeClass('validTarget').removeClass('invalidTarget').removeClass('validTargetCandidate');
+        releaseConnectionDragLock();
+        setPendingRelationshipType(null);
+        pendingRelationshipTypeRef.current = null;
+        setToolMode('SELECT');
+        toolModeRef.current = 'SELECT';
         return;
       }
 
-      setRelationshipDraft({
-        sourceId: relationshipDraft.sourceId,
-        targetId,
-        valid: true,
-        message: 'Target selected. Confirm or cancel to continue.',
-        dragging: false,
+      const creation = createRelationshipFromCanvas({
+        fromId: relationshipDraftRef.current.sourceId,
+        toId: targetId,
+        type: currentRelationshipType,
       });
+      if (!creation.ok) {
+        // Silent failure to avoid disrupting the drag flow.
+      }
+      updateRelationshipDraft({ sourceId: null, targetId: null, valid: null, message: null, dragging: false });
       cyRef.current?.getElementById(DRAFT_EDGE_ID)?.remove();
-      cyRef.current?.getElementById(DRAFT_TARGET_ID)?.remove();
-      cyRef.current?.nodes().removeClass('validTarget').removeClass('invalidTarget');
-      setRelationshipTargetId(targetId);
+      removeDraftTarget();
+      cyRef.current?.nodes().removeClass('validTarget').removeClass('invalidTarget').removeClass('validTargetCandidate');
+      setRelationshipSourceId(null);
+      setRelationshipTargetId(null);
+      setPendingRelationshipType(null);
+      pendingRelationshipTypeRef.current = null;
+      setToolMode('SELECT');
+      toolModeRef.current = 'SELECT';
+      releaseConnectionDragLock();
     };
 
     const handleDragCancel = () => {
-      if (!relationshipDraft.dragging) return;
-      setRelationshipDraft({ sourceId: null, targetId: null, valid: null, message: null, dragging: false });
+      if (!relationshipDraftRef.current.dragging && !freeConnectorDragRef.current.dragging) return;
+      updateRelationshipDraft({ sourceId: null, targetId: null, valid: null, message: null, dragging: false });
+      freeConnectorDragRef.current = { sourceId: null, dragging: false };
+      setFreeConnectorSourceId(null);
       cyRef.current?.getElementById(DRAFT_EDGE_ID)?.remove();
-      cyRef.current?.getElementById(DRAFT_TARGET_ID)?.remove();
-      cyRef.current?.nodes().removeClass('validTarget').removeClass('invalidTarget');
+      removeDraftTarget();
+      cyRef.current?.nodes().removeClass('validTarget').removeClass('invalidTarget').removeClass('validTargetCandidate');
+      releaseConnectionDragLock();
+      setPendingRelationshipType(null);
+      pendingRelationshipTypeRef.current = null;
+      setToolMode('SELECT');
+      toolModeRef.current = 'SELECT';
     };
 
     const handleMouseMove = (evt: any) => {
-      if (!relationshipDraft.dragging) return;
+      if (!relationshipDraftRef.current.dragging && !freeConnectorDragRef.current.dragging) return;
       if (!cyRef.current) return;
+      if (relationshipDraftRef.current.dragging && cyRef.current.getElementById(DRAFT_EDGE_ID).empty()) return;
       const pos = evt.position ?? evt.cyPosition;
       if (!pos) return;
-      const target = cyRef.current.getElementById(DRAFT_TARGET_ID);
-      if (!target.empty()) target.position({ x: pos.x, y: pos.y });
+      if (relationshipDraftRef.current.dragging) {
+        const hoverNode = findNodeAtPosition(pos);
+        cyRef.current.nodes().removeClass('validTarget').removeClass('invalidTarget');
+        if (hoverNode && !hoverNode.empty() && hoverNode.hasClass('validTargetCandidate')) {
+          hoverNode.addClass('validTarget');
+          updateDraftEdgeTarget(pos, hoverNode);
+        } else {
+          updateDraftEdgeTarget(pos, null, false, relationshipDraftRef.current.sourceId);
+        }
+      } else if (freeConnectorDragRef.current.dragging) {
+        const hoverNode = findNodeAtPosition(pos);
+        updateDraftEdgeTarget(pos, hoverNode, true, freeConnectorDragRef.current.sourceId);
+      }
     };
 
     const handleNodeDrag = (evt: any) => {
       if (!cyRef.current) return;
+      if (toolModeRef.current !== 'SELECT') return;
+      if (connectionDragLockRef.current) return;
       const node = evt.target;
       if (!node || node === cyRef.current) return;
-      if (!iterativeModeling && !node.data('staged')) return;
-      if (isLargeGraph) {
-        const now = Date.now();
-        if (now - dragThrottleRef.current < DRAG_THROTTLE_MS) return;
-        dragThrottleRef.current = now;
-        setAlignmentGuides({ x: null, y: null });
-        return;
-      }
-      const guide = getAlignmentGuideForNode(String(node.id()));
-      setAlignmentGuides({ x: guide.x, y: guide.y });
+      if (!iterativeModeling && !node.data('staged') && !node.data('freeShape')) return;
+      // No-op during drag to avoid React updates and extra work.
     };
 
     const handleNodeDragFree = (evt: any) => {
       if (!cyRef.current) return;
-      const node = evt.target;
-      if (!node || node === cyRef.current) return;
-      if (!iterativeModeling && !node.data('staged')) return;
-      if (snapTemporarilyDisabled) {
-        setAlignmentGuides({ x: null, y: null });
+      if (toolModeRef.current !== 'SELECT') {
         return;
       }
+      if (connectionDragLockRef.current) return;
+      const node = evt.target;
+      if (!node || node === cyRef.current) return;
+      if (!iterativeModeling && !node.data('staged') && !node.data('freeShape')) return;
+      draggingRef.current = false;
+      cyRef.current.edges().removeClass('dragEdgesHidden');
+
+      const restoreNodeSize = (n: any) => {
+        const prev = n.scratch('_dragSizeLock') as
+          | {
+              width?: string;
+              height?: string;
+              textWrap?: string;
+              textMaxWidth?: string;
+            }
+          | undefined;
+        if (prev) {
+          if (prev.width != null) n.style('width', prev.width);
+          if (prev.height != null) n.style('height', prev.height);
+          if (prev.textWrap != null) n.style('text-wrap', prev.textWrap);
+          if (prev.textMaxWidth != null) n.style('text-max-width', prev.textMaxWidth);
+        }
+        n.removeScratch('_dragSizeLock');
+      };
+
+      if (!snapTemporarilyDisabled) {
+        const selected = cyRef.current.nodes(':selected');
+        if (selected.length > 1) {
+          selected.forEach((n) => {
+            if (!iterativeModeling && !n.data('staged') && !n.data('freeShape')) return;
+            const pos = n.position();
+            const snapped = snapToGridCenter({ x: pos.x, y: pos.y });
+            n.position({ x: snapped.x, y: snapped.y });
+          });
+        } else {
+          const pos = node.position();
+          const snapped = snapToGridCenter({ x: pos.x, y: pos.y });
+          node.position({ x: snapped.x, y: snapped.y });
+        }
+      }
+
       const selected = cyRef.current.nodes(':selected');
       if (selected.length > 1) {
-        selected.forEach((n) => {
-          if (!iterativeModeling && !n.data('staged')) return;
-          snapPosition(String(n.id()));
-        });
+        selected.forEach((n) => restoreNodeSize(n));
       } else {
-        snapPosition(String(node.id()));
+        restoreNodeSize(node);
       }
       setAlignmentGuides({ x: null, y: null });
+      refreshConnectionPositionSnapshot();
+    };
+
+    const handleNodeGrab = (evt: any) => {
+      if (!cyRef.current) return;
+      if (toolModeRef.current !== 'SELECT') return;
+      if (connectionDragLockRef.current) return;
+      const node = evt.target as any;
+      if (!node || node === cyRef.current) return;
+      if (!iterativeModeling && !node.data('staged') && !node.data('freeShape')) return;
+      draggingRef.current = true;
+      cyRef.current.edges().addClass('dragEdgesHidden');
+
+      const applySizeLock = (n: any) => {
+        if (n.scratch('_dragSizeLock')) return;
+        n.scratch('_dragSizeLock', {
+          width: n.style('width'),
+          height: n.style('height'),
+          textWrap: n.style('text-wrap'),
+          textMaxWidth: n.style('text-max-width'),
+        });
+        const width = n.width();
+        const height = n.height();
+        n.style('width', `${width}`);
+        n.style('height', `${height}`);
+        n.style('text-wrap', 'none');
+        n.style('text-max-width', `${width}`);
+      };
+
+      const selected = cyRef.current.nodes(':selected');
+      if (node.selected() && selected.length > 1) {
+        selected.forEach((n) => applySizeLock(n));
+      } else {
+        applySizeLock(node);
+      }
     };
 
     const handleDoubleTap = (evt: any) => {
       if (!cyRef.current) return;
       if (evt.target !== cyRef.current) return;
-      if (designWorkspace.status !== 'DRAFT') {
-        message.warning('Workspace is read-only. Reopen draft to create elements.');
-        return;
-      }
-      if (!canModelMode) return;
-      const pos = evt.position ?? evt.cyPosition ?? { x: 0, y: 0 };
-      setQuickCreatePlacement({ x: pos.x, y: pos.y });
-      setQuickCreateType(null);
-      quickCreateForm.setFieldsValue({
-        type: undefined as any,
-        name: '',
-        description: '',
-      });
-      setPendingChildCreation(null);
-      setQuickCreateOpen(true);
+      message.info('Create new elements from the EA Toolbox. Drag from Explorer to reuse existing elements.');
     };
 
     const handleSelectionChange = () => {
       if (!cyRef.current) return;
-      const selected = cyRef.current.nodes(':selected').map((n) => String(n.id()));
-      setSelectedNodeIds(selected);
-      const selectedEdges = cyRef.current.edges(':selected').map((e) => String(e.id()));
-      setSelectedEdgeId(selectedEdges.length ? selectedEdges[0] : null);
+      if (draggingRef.current) return;
+      const selectedNodes = cyRef.current.nodes(':selected');
+      const freeNodes = selectedNodes.filter((n) => n.data('freeShape'));
+      const eaNodes = selectedNodes.filter((n) => !n.data('freeShape'));
+      setSelectedNodeIds(eaNodes.map((n) => String(n.id())));
+      setSelectedFreeShapeId(freeNodes.length === 1 ? String(freeNodes[0].id()) : null);
+
+      const selectedEdges = cyRef.current.edges(':selected');
+      const freeEdges = selectedEdges.filter((e) => e.data('freeConnector'));
+      const eaEdges = selectedEdges.filter((e) => !e.data('freeConnector') && !e.data('governanceWarning'));
+      setSelectedEdgeId(eaEdges.length ? String(eaEdges[0].id()) : null);
+      setSelectedFreeConnectorId(freeEdges.length ? String(freeEdges[0].id()) : null);
     };
 
     const handleContextMenu = (evt: any) => {
       if (!evt?.target || evt.target === cyRef.current) return;
+      if (evt.target.data?.('freeShape')) return;
       if (!isHierarchicalView || !hierarchyRelationshipType) return;
       const nodeId = String(evt.target.id());
       if (!nodeId) return;
@@ -3482,12 +5023,30 @@ const StudioShell: React.FC<StudioShellProps> = ({
       setNodeContextMenu({ x: original.clientX, y: original.clientY, nodeId });
     };
 
+    const handleNodePositionChange = (evt: any) => {
+      if (!cyRef.current) return;
+      const currentToolMode = toolModeRef.current;
+      if (currentToolMode !== 'CREATE_RELATIONSHIP' && currentToolMode !== 'CREATE_FREE_CONNECTOR') return;
+      const node = evt.target;
+      if (!node || node === cyRef.current) return;
+      const nodeId = String(node.id());
+      if (!nodeId || node.data('draftTarget')) return;
+      const snapshot = connectionDragPositionsRef.current.get(nodeId);
+      if (!snapshot) return;
+      const pos = evt?.position ?? evt?.cyPosition;
+      if (!pos) return;
+      if (Math.abs(pos.x - snapshot.x) < 0.01 && Math.abs(pos.y - snapshot.y) < 0.01) return;
+      console.error(`[Studio] Node position mutated during connection mode: ${nodeId}`);
+    };
+
     cyRef.current.on('tap', handleTap);
+    cyRef.current.on('grab', 'node', handleNodeGrab);
     cyRef.current.on('drag', 'node', handleNodeDrag);
     cyRef.current.on('dragfree', 'node', handleNodeDragFree);
     cyRef.current.on('mousedown', 'node', handleDragStart);
     cyRef.current.on('tapstart', 'node', handleDragStart);
     cyRef.current.on('mouseover', 'node', handleDragOverNode);
+    cyRef.current.on('mouseout', 'node', handleDragOutNode);
     cyRef.current.on('mouseup', 'node', handleDragEnd);
     cyRef.current.on('tapend', 'node', handleDragEnd);
     cyRef.current.on('mouseup', handleDragCancel);
@@ -3498,14 +5057,17 @@ const StudioShell: React.FC<StudioShellProps> = ({
     cyRef.current.on('select unselect', 'node', handleSelectionChange);
     cyRef.current.on('select unselect', 'edge', handleSelectionChange);
     cyRef.current.on('cxttap', 'node', handleContextMenu);
+    cyRef.current.on('position', 'node', handleNodePositionChange);
 
     return () => {
       cyRef.current?.removeListener('tap', handleTap);
+      cyRef.current?.removeListener('grab', 'node', handleNodeGrab);
       cyRef.current?.removeListener('drag', 'node', handleNodeDrag);
       cyRef.current?.removeListener('dragfree', 'node', handleNodeDragFree);
       cyRef.current?.removeListener('mousedown', handleDragStart);
       cyRef.current?.removeListener('tapstart', handleDragStart);
       cyRef.current?.removeListener('mouseover', handleDragOverNode);
+      cyRef.current?.removeListener('mouseout', handleDragOutNode);
       cyRef.current?.removeListener('mouseup', handleDragEnd);
       cyRef.current?.removeListener('tapend', handleDragEnd);
       cyRef.current?.removeListener('mouseup', handleDragCancel);
@@ -3516,10 +5078,22 @@ const StudioShell: React.FC<StudioShellProps> = ({
       cyRef.current?.removeListener('select unselect', 'node', handleSelectionChange);
       cyRef.current?.removeListener('select unselect', 'edge', handleSelectionChange);
       cyRef.current?.removeListener('cxttap', 'node', handleContextMenu);
-      cyRef.current?.destroy();
-      cyRef.current = null;
+      cyRef.current?.removeListener('position', 'node', handleNodePositionChange);
+      draggingRef.current = false;
     };
-  }, [canDiagramMode, designWorkspace.status, getAlignmentGuideForNode, getValidTargetsForSource, hierarchyRelationshipType, isHierarchicalView, isLargeGraph, iterativeModeling, openPropertiesPanel, pendingElementType, pendingRelationshipType, quickCreateForm, relationshipDraft.dragging, relationshipDraft.sourceId, resolveElementLabel, snapPosition, toolMode, validateRelationshipEndpoints]);
+  }, [addGovernanceWarningEdge, canDiagramMode, clearRelationshipDraftArtifacts, createRelationshipFromCanvas, getAlignmentGuideForNode, getFallbackAnchorPos, getValidTargetsForSource, hierarchyRelationshipType, isHierarchicalView, isLargeGraph, iterativeModeling, lockNodesForConnection, openPropertiesPanel, pendingElementType, pendingElementVisualKind, refreshConnectionPositionSnapshot, releaseConnectionDragLock, removeDraftTarget, resolveElementLabel, snapPosition, updateDraftEdgeTarget, updateRelationshipDraft, validateRelationshipEndpoints]);
+
+  React.useEffect(() => {
+    return () => {
+      try {
+        cyRef.current?.destroy();
+      } catch {
+        // Best-effort only.
+      } finally {
+        cyRef.current = null;
+      }
+    };
+  }, []);
 
   React.useEffect(() => {
     if (!nodeContextMenu) return;
@@ -3542,64 +5116,159 @@ const StudioShell: React.FC<StudioShellProps> = ({
     const cy = cyRef.current;
     const panEnabled = toolMode === 'PAN';
     const selectEnabled = toolMode === 'SELECT';
+    const connectionMode = toolMode === 'CREATE_RELATIONSHIP' || toolMode === 'CREATE_FREE_CONNECTOR';
     cy.userPanningEnabled(presentationView ? true : panEnabled);
     cy.boxSelectionEnabled(presentationView ? false : selectEnabled);
-    cy.autoungrabify(presentationView ? true : panEnabled);
-    if (presentationView) {
+    cy.autoungrabify(presentationView ? true : panEnabled || connectionDragLocked || connectionMode);
+    if (presentationView || connectionDragLocked || connectionMode) {
       cy.nodes().forEach((node) => node.grabbable(false));
     }
-  }, [presentationView, toolMode]);
+  }, [connectionDragLocked, presentationView, toolMode]);
 
   React.useEffect(() => {
     if (!cyRef.current) return;
     const cy = cyRef.current;
     const fontSize = presentationView ? 14 : 11;
     cy.style().selector('node').style('font-size', fontSize).update();
-    if (presentationView) {
+    if (presentationView || connectionDragLocked) {
       cy.nodes().forEach((node) => node.grabbable(false));
     } else {
       cy.nodes().forEach((node) => {
         const isStaged = Boolean(node.data('staged'));
-        node.grabbable(!viewReadOnly && (isStaged || iterativeModeling));
+        const isFreeShape = Boolean(node.data('freeShape'));
+        node.grabbable(!viewReadOnly && (isFreeShape || isStaged || iterativeModeling));
       });
     }
-  }, [iterativeModeling, presentationView, viewReadOnly]);
+  }, [connectionDragLocked, iterativeModeling, presentationView, toolMode, viewReadOnly]);
 
   React.useEffect(() => {
     applyLayerVisibility();
   }, [applyLayerVisibility, stagedElements, stagedRelationships]);
 
   React.useEffect(() => {
-    setStagedElements(designWorkspace.stagedElements ?? []);
-    setStagedRelationships(designWorkspace.stagedRelationships ?? []);
+    if (!cyRef.current || !eaRepository) return;
+    const cy = cyRef.current;
+    cy.nodes().filter((n) => !n.data('freeShape')).forEach((n) => {
+      const id = String(n.id());
+      const repoObj = eaRepository.objects.get(id);
+      if (!repoObj) return;
+      const nextName = nameForObject(repoObj);
+      if (n.data('label') !== nextName) n.data('label', nextName);
+      const nextType = repoObj.type as ObjectType;
+      const visualData = buildEaVisualData({ type: nextType, attributes: repoObj.attributes ?? undefined });
+      n.data('elementType', nextType);
+      n.data('eaShape', visualData.eaShape);
+      n.data('eaIcon', visualData.eaIcon);
+      n.data('eaColor', visualData.eaColor);
+      n.data('eaBorder', visualData.eaBorder);
+      n.data('eaVisualKind', visualData.eaVisualKind);
+    });
+    cy.nodes().filter((n) => n.data('freeShape')).forEach((n) => {
+      const label = String(n.data('label') ?? '').trim();
+      const kind = String(n.data('freeShapeKind') ?? '');
+      const def = FREE_SHAPE_DEFINITIONS.find((s) => s.kind === kind as FreeShapeKind);
+      if (def && label === def.label) {
+        n.data('label', '');
+      }
+    });
+  }, [eaRepository, stagedElements.length]);
+
+  const lastWorkspaceSyncRef = React.useRef<{ id: string; updatedAt: string } | null>(null);
+
+  React.useEffect(() => {
+    const last = lastWorkspaceSyncRef.current;
+    if (!last || last.id !== designWorkspace.id || last.updatedAt !== designWorkspace.updatedAt) {
+      setStagedElements(designWorkspace.stagedElements ?? []);
+      setStagedRelationships(designWorkspace.stagedRelationships ?? []);
+      lastWorkspaceSyncRef.current = { id: designWorkspace.id, updatedAt: designWorkspace.updatedAt };
+    }
+  }, [designWorkspace.id, designWorkspace.updatedAt, designWorkspace.stagedElements, designWorkspace.stagedRelationships]);
+
+  React.useEffect(() => {
     if (!cyRef.current) return;
     try {
       const workspace: DesignWorkspace = {
         ...designWorkspace,
-        stagedElements: designWorkspace.stagedElements ?? [],
-        stagedRelationships: designWorkspace.stagedRelationships ?? [],
+        stagedElements,
+        stagedRelationships,
       };
       const viewLayout = activeViewId && activeView ? buildLayoutFromView(activeView) : null;
+      const viewFreeShapes = (activeView?.layoutMetadata as any)?.freeShapes ?? [];
+      const viewFreeConnectors = (activeView?.layoutMetadata as any)?.freeConnectors ?? [];
+      const freeShapesSeed = activeViewId && activeView ? viewFreeShapes : freeShapes;
+      const freeConnectorsSeed = activeViewId && activeView ? viewFreeConnectors : freeConnectors;
+      if (activeViewId && activeView) {
+        setFreeShapes(viewFreeShapes);
+        setFreeConnectors(viewFreeConnectors);
+      }
       const cy = cyRef.current;
       cy.elements().remove();
-      const nodes = viewLayout?.nodes ?? workspace.layout?.nodes ?? workspace.stagedElements.map((el, index) => ({
-        id: el.id,
-        label: el.name,
-        elementType: el.type,
-        x: 80 + (index % 3) * 160,
-        y: 80 + Math.floor(index / 3) * 120,
-      }));
-      const edges = viewLayout?.edges ?? workspace.layout?.edges ?? workspace.stagedRelationships.map((rel) => ({
-        id: rel.id,
-        source: rel.fromId,
-        target: rel.toId,
-        relationshipType: rel.type,
-      }));
+      const baseNodes = viewLayout?.nodes ?? workspace.layout?.nodes;
+      const nodes: DesignWorkspaceLayoutNode[] = baseNodes
+        ? [...baseNodes]
+        : workspace.stagedElements.map((el, index) => ({
+          id: el.id,
+          label: el.name,
+          elementType: el.type,
+          x: 80 + (index % 3) * 160,
+          y: 80 + Math.floor(index / 3) * 120,
+        }));
+
+      if (baseNodes) {
+        const nodeIdSet = new Set(nodes.map((n) => n.id));
+        workspace.stagedElements.forEach((el, index) => {
+          if (nodeIdSet.has(el.id)) return;
+          const offset = nodes.length + index;
+          nodes.push({
+            id: el.id,
+            label: el.name,
+            elementType: el.type,
+            x: 80 + (offset % 3) * 160,
+            y: 80 + Math.floor(offset / 3) * 120,
+          });
+        });
+      }
+
+      const baseEdges = viewLayout?.edges ?? workspace.layout?.edges;
+      const edges: DesignWorkspaceLayoutEdge[] = baseEdges
+        ? [...baseEdges]
+        : workspace.stagedRelationships.map((rel) => ({
+          id: rel.id,
+          source: rel.fromId,
+          target: rel.toId,
+          relationshipType: rel.type,
+        }));
+
+      if (baseEdges) {
+        const edgeIdSet = new Set(edges.map((e) => e.id));
+        workspace.stagedRelationships.forEach((rel) => {
+          if (edgeIdSet.has(rel.id)) return;
+          edges.push({
+            id: rel.id,
+            source: rel.fromId,
+            target: rel.toId,
+            relationshipType: rel.type,
+          });
+        });
+      }
+      const stagedElementIdSet = new Set(workspace.stagedElements.map((el) => el.id));
       const stagedRelationshipIdSet = new Set(workspace.stagedRelationships.map((rel) => rel.id));
       nodes.forEach((n) => {
-        const isStaged = stagedElementById.has(n.id);
+        const isStaged = stagedElementIdSet.has(n.id);
+        const repoObj = eaRepository?.objects.get(n.id);
+        const repoName = repoObj ? nameForObject(repoObj) : n.label;
+        const repoType = (repoObj?.type as ObjectType | undefined) ?? (n.elementType as ObjectType | undefined);
+        const visualData = repoType
+          ? buildEaVisualData({ type: repoType, attributes: repoObj?.attributes ?? undefined })
+          : { eaShape: undefined, eaIcon: undefined, eaColor: undefined, eaBorder: undefined, eaVisualKind: undefined };
         cy.add({
-          data: { id: n.id, label: n.label, elementType: n.elementType, staged: isStaged },
+          data: {
+            id: n.id,
+            label: repoName,
+            elementType: repoType ?? n.elementType,
+            staged: isStaged,
+            ...visualData,
+          },
           position: { x: n.x, y: n.y },
         });
         const node = cy.getElementById(n.id);
@@ -3610,7 +5279,43 @@ const StudioShell: React.FC<StudioShellProps> = ({
       edges.forEach((e) => {
         const isStaged = stagedRelationshipIdSet.has(e.id);
         cy.add({
-          data: { id: e.id, source: e.source, target: e.target, relationshipType: e.relationshipType, staged: isStaged },
+          data: {
+            id: e.id,
+            source: e.source,
+            target: e.target,
+            relationshipType: e.relationshipType,
+            relationshipStyle: relationshipStyleForType(e.relationshipType as RelationshipType),
+            staged: isStaged,
+          },
+        });
+      });
+      freeShapesSeed.forEach((shape: FreeShape) => {
+        cy.add({
+          data: {
+            id: shape.id,
+            label: shape.label,
+            freeShape: true,
+            freeShapeKind: shape.kind,
+            width: shape.width,
+            height: shape.height,
+            shape: FREE_SHAPE_DEFINITIONS.find((s) => s.kind === shape.kind)?.shape ?? 'round-rectangle',
+          },
+          position: { x: shape.x, y: shape.y },
+        });
+        const node = cy.getElementById(shape.id);
+        if (node && !node.empty()) {
+          node.grabbable(!viewReadOnly);
+        }
+      });
+      freeConnectorsSeed.forEach((connector: FreeConnector) => {
+        cy.add({
+          data: {
+            id: connector.id,
+            source: connector.source,
+            target: connector.target,
+            freeConnector: true,
+            freeConnectorKind: connector.kind,
+          },
         });
       });
       setIsLargeGraph(cy.nodes().length > LARGE_GRAPH_THRESHOLD);
@@ -3622,7 +5327,7 @@ const StudioShell: React.FC<StudioShellProps> = ({
       message.error('Workspace load failed. Staged items were not applied.');
       cyRef.current?.elements().remove();
     }
-  }, [activeView, activeViewId, applyLayerVisibility, buildLayoutFromView, designWorkspace, iterativeModeling, stagedElementById, viewReadOnly]);
+  }, [activeView, activeViewId, applyLayerVisibility, buildLayoutFromView, designWorkspace, eaRepository, iterativeModeling, stagedElements, stagedRelationships, viewReadOnly]);
 
   const handleExit = React.useCallback(() => {
     if (stagedElements.length > 0 || stagedRelationships.length > 0) {
@@ -3669,6 +5374,7 @@ const StudioShell: React.FC<StudioShellProps> = ({
     }
 
     setPendingElementType(null);
+    setPendingElementVisualKind(null);
     setPlacement(null);
     setCreateModalOpen(false);
     setAuditPreviewOpen(false);
@@ -3681,9 +5387,6 @@ const StudioShell: React.FC<StudioShellProps> = ({
     form.resetFields();
     onExit();
   }, [form, onExit, saveWorkspaceDraft, stagedElements.length, stagedRelationships.length]);
-
-  const canConfirmRelationship =
-    Boolean(pendingRelationshipType && relationshipSourceId && relationshipTargetId && relationshipDraft.valid);
 
   React.useEffect(() => {
     if (!stagedInitRef.current) {
@@ -3773,6 +5476,83 @@ const StudioShell: React.FC<StudioShellProps> = ({
     }
   }, [guidanceIgnoreStorageKey, ignoredGuidance]);
 
+  React.useEffect(() => {
+    try {
+      localStorage.setItem(designPromptIgnoreStorageKey, JSON.stringify(ignoredDesignPrompts));
+    } catch {
+      // Best-effort only.
+    }
+  }, [designPromptIgnoreStorageKey, ignoredDesignPrompts]);
+
+  const designModePrompts = React.useMemo(
+    () => [
+      {
+        id: 'EA_ONLY_DESIGN',
+        title: 'Prompt 1 · EA-first design',
+        description:
+          'Design mode prioritizes EA semantics. Use EA element and relationship types from the metamodel and the active viewpoint. Free diagram shapes are visual-only and do not affect the EA model.',
+      },
+      {
+        id: 'NO_GENERIC_DRAWING',
+        title: 'Prompt 2 · Visual-only free shapes',
+        description:
+          'Free diagram shapes and connectors are allowed for visual context only. They must never be treated as EA elements or relationships.',
+      },
+      {
+        id: 'NODE_PALETTE_EA_ONLY',
+        title: 'Prompt 3 · Node palette',
+        description:
+          'All nodes available for design must come from the EA metamodel (Business, Application, Technology, Implementation & Migration, Governance).',
+      },
+      {
+        id: 'CONNECTOR_PALETTE_EA_ONLY',
+        title: 'Prompt 4 · Connector palette',
+        description: 'All connectors must represent a valid EA relationship type.',
+      },
+      {
+        id: 'DESIGN_WITHOUT_SEMANTICS_LOSS',
+        title: 'Prompt 5 · Design without semantics loss',
+        description: 'Visual freedom must never violate EA semantics or layer rules.',
+      },
+      {
+        id: 'FLEXIBLE_LAYOUT',
+        title: 'Prompt 6 · Flexible layout',
+        description: 'Allow users to freely position, resize, and align EA nodes to express their design intent.',
+      },
+      {
+        id: 'INTENTIONAL_CONNECTIONS',
+        title: 'Prompt 7 · Intentional connections',
+        description: 'A connection must always require the user to select an explicit relationship type.',
+      },
+      {
+        id: 'PARTIAL_DESIGNS_ALLOWED',
+        title: 'Prompt 8 · Partial designs allowed',
+        description: 'Allow incomplete or evolving designs as long as no invalid relationships exist.',
+      },
+      {
+        id: 'VISUAL_GROUPING',
+        title: 'Prompt 9 · Visual grouping',
+        description: 'Allow visual grouping and layout patterns without creating semantic relationships.',
+      },
+      {
+        id: 'EA_GUARDRAILS',
+        title: 'Prompt 10 · EA guardrails',
+        description:
+          'When a design action violates EA rules, block it and explain the correct EA-compliant alternative.',
+      },
+    ],
+    [],
+  );
+
+  const visibleDesignPrompts = React.useMemo(() => {
+    if (studioModeLevel !== 'Design') return [] as typeof designModePrompts;
+    return designModePrompts.filter((prompt) => !ignoredDesignPrompts.includes(prompt.id));
+  }, [designModePrompts, ignoredDesignPrompts, studioModeLevel]);
+
+  const dismissDesignPrompt = React.useCallback((promptId: string) => {
+    setIgnoredDesignPrompts((prev) => (prev.includes(promptId) ? prev : [...prev, promptId]));
+  }, []);
+
   const GUIDANCE_RULE_LABELS: Record<string, string> = {
     CAPABILITY_MISSING_OWNER: 'Capabilities missing owner',
     APPLICATION_MISSING_LIFECYCLE: 'Applications missing lifecycle',
@@ -3788,6 +5568,9 @@ const StudioShell: React.FC<StudioShellProps> = ({
     EA_BUSINESS_SERVICE_REQUIRES_CAPABILITY: 'Business service missing capability',
     EA_CAPABILITY_REQUIRES_APPLICATION_SERVICE_SUPPORT: 'Capability missing application service support',
     EA_APPLICATION_SERVICE_REQUIRES_APPLICATION: 'Application service missing application',
+    EA_APPLICATION_SERVICE_REQUIRES_USAGE: 'Application service missing usage',
+    EA_APPLICATION_NO_PHYSICAL_TERMS: 'Application name is physical/infra',
+    EA_APPLICATION_REQUIRES_BUSINESS_PROCESS: 'Application missing business process support',
     EA_REQUIRED_NAME: 'Missing name',
     EA_FORBIDDEN_TECHNOLOGY_BUSINESS_LINK: 'Forbidden technology-business link',
     RELATIONSHIP_INSERT: 'Relationship insert issues',
@@ -4257,6 +6040,304 @@ const StudioShell: React.FC<StudioShellProps> = ({
       'Free-form workspace. Diagram type controls the visual grammar, allowed elements, and relationships.',
     [activeViewpoint?.description],
   );
+  const toolboxPanel = showToolbox ? (
+    <div className={styles.studioToolboxPanel}>
+      <div className={styles.studioToolboxHeader}>
+        <div className={styles.studioToolboxTitle}>
+          <AppstoreOutlined />
+          <Typography.Text strong>Toolbox</Typography.Text>
+        </div>
+        <div className={styles.studioToolboxActions}>
+          <Tooltip title={toolboxExpanded ? 'Restore width' : 'Expand to full width'}>
+            <Button
+              size="small"
+              type="text"
+              icon={toolboxExpanded ? <ShrinkOutlined /> : <ArrowsAltOutlined />}
+              aria-label={toolboxExpanded ? 'Restore toolbox width' : 'Expand toolbox'}
+              onClick={toggleToolboxExpanded}
+            />
+          </Tooltip>
+          <Tooltip title={toolboxCollapsed ? 'Expand toolbox' : 'Collapse toolbox'}>
+            <Button
+              size="small"
+              type="text"
+              icon={toolboxCollapsed ? <AppstoreOutlined /> : <CloseOutlined />}
+              aria-label={toolboxCollapsed ? 'Expand toolbox' : 'Collapse toolbox'}
+              onClick={() =>
+                setToolboxCollapsed((prev) => {
+                  const next = !prev;
+                  if (next && toolboxExpanded) toggleToolboxExpanded();
+                  return next;
+                })
+              }
+            />
+          </Tooltip>
+        </div>
+      </div>
+      {!toolboxCollapsed ? (
+        <Tabs
+          className={styles.studioToolboxTabs}
+          size="small"
+          items={[
+            {
+              key: 'components',
+              label: 'Components',
+              children: (
+                toolboxComponentItems.length === 0 ? (
+                  <Typography.Text type="secondary" className={styles.studioToolboxEmpty}>
+                    No components available for this viewpoint.
+                  </Typography.Text>
+                ) : (
+                  <div className={styles.studioToolboxGrid}>
+                    {toolboxComponentItems.map((item) => {
+                      const displayLabel = item.label;
+                      return (
+                        <Tooltip key={`${item.kind}`} title={displayLabel}>
+                          <button
+                            type="button"
+                            className={
+                              toolMode === 'CREATE_ELEMENT' && pendingElementType === item.type && pendingElementVisualKind === item.kind
+                                ? styles.studioToolboxIconButtonActive
+                                : styles.studioToolboxIconButton
+                            }
+                            disabled={toolboxInteractionDisabled}
+                            draggable={!toolboxInteractionDisabled}
+                            onDragStart={(e) => {
+                              if (toolboxInteractionDisabled) return;
+                              if (!ensureToolboxElementType(item.type as ObjectType, displayLabel, item.kind)) return;
+                              e.dataTransfer.setData('application/x-ea-element-type', String(item.type));
+                              e.dataTransfer.setData('application/x-ea-visual-kind', String(item.kind));
+                              e.dataTransfer.effectAllowed = 'copy';
+                              setPendingElementType(item.type as ObjectType);
+                              setPendingElementVisualKind(item.kind);
+                              setToolMode('CREATE_ELEMENT');
+                            }}
+                            onClick={() => {
+                              if (toolboxInteractionDisabled) return;
+                              if (!ensureToolboxElementType(item.type as ObjectType, displayLabel, item.kind)) return;
+                              setPendingElementType(item.type as ObjectType);
+                              setPendingElementVisualKind(item.kind);
+                              setPendingRelationshipType(null);
+                              setRelationshipSourceId(null);
+                              setRelationshipTargetId(null);
+                              setPlacementModeActive(false);
+                              setPlacement(null);
+                              setPendingElementNameDraft(null);
+                              setToolMode('SELECT');
+                              form.setFieldsValue({ name: `New ${displayLabel}`, description: '' });
+                              setCreateModalOpen(true);
+                              message.info(`Name ${displayLabel} to continue placement.`);
+                            }}
+                            aria-label={`Create ${displayLabel}`}
+                          >
+                            <span className={styles.studioToolboxIcon}>
+                              <img src={item.icon} alt="" className={styles.studioToolboxIconImage} />
+                            </span>
+                          </button>
+                        </Tooltip>
+                      );
+                    })}
+                  </div>
+                )
+              ),
+            },
+            {
+              key: 'nodes',
+              label: 'Nodes',
+              children: (
+                toolboxTechnologyItems.length === 0 ? (
+                  <Typography.Text type="secondary" className={styles.studioToolboxEmpty}>
+                    No nodes available for this viewpoint.
+                  </Typography.Text>
+                ) : (
+                  <div className={styles.studioToolboxGrid}>
+                    {toolboxTechnologyItems.map((item) => {
+                      const displayLabel = item.label;
+                      return (
+                        <Tooltip key={`${item.kind}`} title={displayLabel}>
+                          <button
+                            type="button"
+                            className={
+                              toolMode === 'CREATE_ELEMENT' && pendingElementType === item.type && pendingElementVisualKind === item.kind
+                                ? styles.studioToolboxIconButtonActive
+                                : styles.studioToolboxIconButton
+                            }
+                            disabled={toolboxInteractionDisabled}
+                            draggable={!toolboxInteractionDisabled}
+                            onDragStart={(e) => {
+                              if (toolboxInteractionDisabled) return;
+                              if (!ensureToolboxElementType(item.type as ObjectType, displayLabel, item.kind)) return;
+                              e.dataTransfer.setData('application/x-ea-element-type', String(item.type));
+                              e.dataTransfer.setData('application/x-ea-visual-kind', String(item.kind));
+                              e.dataTransfer.effectAllowed = 'copy';
+                              setPendingElementType(item.type as ObjectType);
+                              setPendingElementVisualKind(item.kind);
+                              setToolMode('CREATE_ELEMENT');
+                            }}
+                            onClick={() => {
+                              if (toolboxInteractionDisabled) return;
+                              if (!ensureToolboxElementType(item.type as ObjectType, displayLabel, item.kind)) return;
+                              setPendingElementType(item.type as ObjectType);
+                              setPendingElementVisualKind(item.kind);
+                              setPendingRelationshipType(null);
+                              setRelationshipSourceId(null);
+                              setRelationshipTargetId(null);
+                              setPlacementModeActive(false);
+                              setPlacement(null);
+                              setPendingElementNameDraft(null);
+                              setToolMode('SELECT');
+                              form.setFieldsValue({ name: `New ${displayLabel}`, description: '' });
+                              setCreateModalOpen(true);
+                              message.info(`Name ${displayLabel} to continue placement.`);
+                            }}
+                            aria-label={`Create ${displayLabel}`}
+                          >
+                            <span className={styles.studioToolboxIcon}>
+                              <img src={item.icon} alt="" className={styles.studioToolboxIconImage} />
+                            </span>
+                          </button>
+                        </Tooltip>
+                      );
+                    })}
+                  </div>
+                )
+              ),
+            },
+            {
+              key: 'connections',
+              label: 'Connections',
+              children: (
+                paletteRelationships.length === 0 ? (
+                  <Typography.Text type="secondary" className={styles.studioToolboxEmpty}>
+                    No connections available for this viewpoint.
+                  </Typography.Text>
+                ) : (
+                  <div className={styles.studioToolboxGrid}>
+                    {paletteRelationships.map((t) => {
+                      const label = resolveRelationshipLabel(t.type);
+                      return (
+                        <Tooltip key={t.type} title={label}>
+                          <button
+                            type="button"
+                            className={
+                              toolMode === 'CREATE_RELATIONSHIP' && pendingRelationshipType === t.type
+                                ? styles.studioToolboxIconButtonActive
+                                : styles.studioToolboxIconButton
+                            }
+                            disabled={toolboxInteractionDisabled}
+                            draggable={!toolboxInteractionDisabled}
+                            onDragStart={(e) => {
+                              if (toolboxInteractionDisabled) return;
+                              if (!ensureToolboxRelationshipType(t.type as RelationshipType, label)) return;
+                              e.dataTransfer.setData('application/x-ea-relationship-type', String(t.type));
+                              e.dataTransfer.effectAllowed = 'copy';
+                              setToolMode('CREATE_RELATIONSHIP');
+                              setPendingRelationshipType(t.type as RelationshipType);
+                              toolModeRef.current = 'CREATE_RELATIONSHIP';
+                              pendingRelationshipTypeRef.current = t.type as RelationshipType;
+                              setPendingElementType(null);
+                              setPendingElementVisualKind(null);
+                              setRelationshipSourceId(null);
+                              setRelationshipTargetId(null);
+                              setPlacementModeActive(false);
+                            }}
+                            onClick={() => {
+                              if (toolboxInteractionDisabled) return;
+                              if (!ensureToolboxRelationshipType(t.type as RelationshipType, label)) return;
+                              setToolMode('CREATE_RELATIONSHIP');
+                              setPendingRelationshipType(t.type as RelationshipType);
+                              toolModeRef.current = 'CREATE_RELATIONSHIP';
+                              pendingRelationshipTypeRef.current = t.type as RelationshipType;
+                              setPendingElementType(null);
+                              setPendingElementVisualKind(null);
+                              setRelationshipSourceId(null);
+                              setRelationshipTargetId(null);
+                              setPlacementModeActive(false);
+                              // Relationship creation starts immediately on drag from a source node.
+                            }}
+                            aria-label={`Create ${label}`}
+                          >
+                            <span className={styles.studioToolboxIcon}>
+                              <img src={resolveRelationshipIcon(t.type as RelationshipType, 'tool')} alt="" className={styles.studioToolboxIconImage} />
+                            </span>
+                          </button>
+                        </Tooltip>
+                      );
+                    })}
+                  </div>
+                )
+              ),
+            },
+            {
+              key: 'connectors',
+              label: 'Connectors',
+              children: (
+                paletteRelationships.length === 0 ? (
+                  <Typography.Text type="secondary" className={styles.studioToolboxEmpty}>
+                    No connectors available for this viewpoint.
+                  </Typography.Text>
+                ) : (
+                  <div className={styles.studioToolboxGrid}>
+                    {paletteRelationships.map((t) => {
+                      const label = resolveRelationshipLabel(t.type);
+                      return (
+                        <Tooltip key={t.type} title={label}>
+                          <button
+                            type="button"
+                            className={
+                              toolMode === 'CREATE_RELATIONSHIP' && pendingRelationshipType === t.type
+                                ? styles.studioToolboxIconButtonActive
+                                : styles.studioToolboxIconButton
+                            }
+                            disabled={toolboxInteractionDisabled}
+                            draggable={!toolboxInteractionDisabled}
+                            onDragStart={(e) => {
+                              if (toolboxInteractionDisabled) return;
+                              if (!ensureToolboxRelationshipType(t.type as RelationshipType, label)) return;
+                              e.dataTransfer.setData('application/x-ea-relationship-type', String(t.type));
+                              e.dataTransfer.effectAllowed = 'copy';
+                              setToolMode('CREATE_RELATIONSHIP');
+                              setPendingRelationshipType(t.type as RelationshipType);
+                              toolModeRef.current = 'CREATE_RELATIONSHIP';
+                              pendingRelationshipTypeRef.current = t.type as RelationshipType;
+                              setPendingElementType(null);
+                              setPendingElementVisualKind(null);
+                              setRelationshipSourceId(null);
+                              setRelationshipTargetId(null);
+                              setPlacementModeActive(false);
+                            }}
+                            onClick={() => {
+                              if (toolboxInteractionDisabled) return;
+                              if (!ensureToolboxRelationshipType(t.type as RelationshipType, label)) return;
+                              setToolMode('CREATE_RELATIONSHIP');
+                              setPendingRelationshipType(t.type as RelationshipType);
+                              toolModeRef.current = 'CREATE_RELATIONSHIP';
+                              pendingRelationshipTypeRef.current = t.type as RelationshipType;
+                              setPendingElementType(null);
+                              setPendingElementVisualKind(null);
+                              setRelationshipSourceId(null);
+                              setRelationshipTargetId(null);
+                              setPlacementModeActive(false);
+                              // Relationship creation starts immediately on drag from a source node.
+                            }}
+                            aria-label={`Create ${label}`}
+                          >
+                            <span className={styles.studioToolboxIcon}>
+                              <img src={resolveRelationshipIcon(t.type as RelationshipType, 'connector')} alt="" className={styles.studioToolboxIconImage} />
+                            </span>
+                          </button>
+                        </Tooltip>
+                      );
+                    })}
+                  </div>
+                )
+              ),
+            },
+          ]}
+        />
+      ) : null}
+    </div>
+  ) : null;
 
   return (
     <div className={styles.studioShell} style={{ borderColor: token.colorWarningBorder }}>
@@ -4266,76 +6347,6 @@ const StudioShell: React.FC<StudioShellProps> = ({
         ref={studioHeaderRef}
       >
         <div className={styles.studioCommandRow}>
-          {!presentationView ? (
-            <div className={styles.studioRibbonGroupSmall}>
-              <div className={styles.studioToolBar}>
-                <Tooltip title="Select">
-                  <Button
-                    size="small"
-                    type="text"
-                    className={toolMode === 'SELECT' ? styles.studioToolButtonActive : styles.studioToolButton}
-                    icon={<SelectOutlined />}
-                    aria-label="Select tool"
-                    onClick={() => {
-                      resetToolDrafts();
-                      setToolMode('SELECT');
-                    }}
-                  />
-                </Tooltip>
-                <Tooltip title="Create element">
-                  {canDiagramMode ? (
-                    <Button
-                      size="small"
-                      type="text"
-                      className={toolMode === 'CREATE_ELEMENT' ? styles.studioToolButtonActive : styles.studioToolButton}
-                      icon={<PlusSquareOutlined />}
-                      aria-label="Create element tool"
-                      disabled={viewReadOnly}
-                      onClick={() => {
-                        if (viewReadOnly) return;
-                        resetToolDrafts();
-                        setToolMode('CREATE_ELEMENT');
-                      }}
-                    />
-                  ) : null}
-                </Tooltip>
-                <Tooltip title="Create relationship">
-                  {canDiagramMode ? (
-                    <Button
-                      size="small"
-                      type="text"
-                      className={toolMode === 'CREATE_RELATIONSHIP' ? styles.studioToolButtonActive : styles.studioToolButton}
-                      icon={<NodeIndexOutlined />}
-                      aria-label="Create relationship tool"
-                      disabled={viewReadOnly}
-                      onClick={() => {
-                        if (viewReadOnly) return;
-                        if (!pendingRelationshipType) {
-                          message.info('Select a relationship type from the ribbon first.');
-                          return;
-                        }
-                        resetToolDrafts();
-                        setToolMode('CREATE_RELATIONSHIP');
-                      }}
-                    />
-                  ) : null}
-                </Tooltip>
-                <Tooltip title="Pan">
-                  <Button
-                    size="small"
-                    type="text"
-                    className={toolMode === 'PAN' ? styles.studioToolButtonActive : styles.studioToolButton}
-                    icon={<DragOutlined />}
-                    aria-label="Pan tool"
-                    onClick={() => {
-                      resetToolDrafts();
-                      setToolMode('PAN');
-                    }}
-                  />
-                </Tooltip>
-              </div>
-            </div>
-          ) : null}
           <div className={styles.studioRibbonGroupSmall}>
             <Tooltip title="Studio mode controls which diagramming and modeling tools are visible.">
               <Radio.Group
@@ -4372,7 +6383,13 @@ const StudioShell: React.FC<StudioShellProps> = ({
             <div className={styles.studioRibbonGroup}>
               <div className={styles.studioRibbonGroupContent}>
                 <div className={styles.studioRibbonToggleGroup}>
-                  {(['Business', 'Application', 'Technology'] as const).map((layer) => (
+                  {([
+                    'Business',
+                    'Application',
+                    'Technology',
+                    'Implementation & Migration',
+                    'Governance',
+                  ] as const).map((layer) => (
                     <Button
                       key={layer}
                       size="small"
@@ -4406,111 +6423,6 @@ const StudioShell: React.FC<StudioShellProps> = ({
               </div>
             </div>
           ) : null}
-          {canDiagramMode ? (
-          <div className={styles.studioRibbonGroupPrimary}>
-            <div className={styles.studioRibbonBand}>
-              {paletteBusinessElements
-                .filter((t) => ribbonElementTypes.includes(t.type as ObjectType))
-                .map((t) => (
-                  <button
-                    key={t.type}
-                    type="button"
-                    className={styles.studioRibbonButton}
-                    disabled={viewReadOnly}
-                    draggable={!viewReadOnly}
-                    onDragStart={(e) => {
-                      if (viewReadOnly) return;
-                      e.dataTransfer.setData('application/x-ea-element-type', String(t.type));
-                      e.dataTransfer.effectAllowed = 'copy';
-                      setToolMode('CREATE_ELEMENT');
-                    }}
-                    onClick={() => {
-                      if (viewReadOnly) return;
-                      setToolMode('CREATE_ELEMENT');
-                      setPendingElementType(t.type as ObjectType);
-                      setPendingRelationshipType(null);
-                      setRelationshipSourceId(null);
-                      setRelationshipTargetId(null);
-                      setPlacementModeActive(true);
-                      message.info(`Create ${t.type}: click the canvas to place.`);
-                    }}
-                  >
-                    {renderTypeIcon(t.type)}
-                    <span>{t.type}</span>
-                  </button>
-                ))}
-            </div>
-            <span className={styles.studioRibbonDivider} />
-            <div className={styles.studioRibbonBand}>
-              {paletteTechnologyElements
-                .filter((t) => ribbonTechnologyTypes.includes(t.type as ObjectType))
-                .map((t) => {
-                  const visual = technologyVisualByType.get(t.type);
-                  const displayLabel = ribbonTechnologyLabels[t.type] || t.type;
-                  return (
-                    <Tooltip key={t.type} title={displayLabel}>
-                      <button
-                        type="button"
-                        className={styles.studioRibbonButtonIconOnly}
-                        disabled={viewReadOnly}
-                        draggable={!viewReadOnly}
-                        aria-label={displayLabel}
-                        onDragStart={(e) => {
-                          if (viewReadOnly) return;
-                          e.dataTransfer.setData('application/x-ea-element-type', String(t.type));
-                          e.dataTransfer.effectAllowed = 'copy';
-                          setToolMode('CREATE_ELEMENT');
-                        }}
-                        onClick={() => {
-                          if (viewReadOnly) return;
-                          setToolMode('CREATE_ELEMENT');
-                          setPendingElementType(t.type as ObjectType);
-                          setPendingRelationshipType(null);
-                          setRelationshipSourceId(null);
-                          setRelationshipTargetId(null);
-                          setPlacementModeActive(true);
-                          message.info(`Create ${displayLabel}: click the canvas to place.`);
-                        }}
-                      >
-                        {visual ? (
-                          <img src={visual.icon} alt="" className={styles.studioRibbonIconOnly} />
-                        ) : (
-                          renderTypeIcon(t.type)
-                        )}
-                      </button>
-                    </Tooltip>
-                  );
-                })}
-            </div>
-            <span className={styles.studioRibbonDivider} />
-            <div className={styles.studioRibbonBand}>
-              {paletteRelationships
-                .filter((t) => ribbonRelationshipTypes.includes(t.type as RelationshipType))
-                .map((t) => (
-                  <Tooltip key={t.type} title={t.type.replace(/_/g, ' ')}>
-                    <button
-                      type="button"
-                      className={styles.studioRibbonButtonIconOnly}
-                      aria-label={t.type.replace(/_/g, ' ')}
-                      disabled={viewReadOnly}
-                      onClick={() => {
-                        if (viewReadOnly) return;
-                        setToolMode('CREATE_RELATIONSHIP');
-                        setPendingRelationshipType(t.type as RelationshipType);
-                        setPendingElementType(null);
-                        setRelationshipSourceId(null);
-                        setRelationshipTargetId(null);
-                        setPlacementModeActive(false);
-                        message.info(`Create ${t.type.replace(/_/g, ' ')}: select source then target.`);
-                      }}
-                    >
-                      <LinkOutlined className={styles.studioRibbonIconOnly} />
-                    </button>
-                  </Tooltip>
-                ))}
-            </div>
-          </div>
-          ) : null}
           <div className={styles.studioRibbonGroupMuted}>
             <div className={styles.studioRibbonItemMutedLabel}>{workspaceDisplayName}</div>
             <Tag color={isViewBoundWorkspace ? 'geekblue' : 'default'}>
@@ -4520,143 +6432,6 @@ const StudioShell: React.FC<StudioShellProps> = ({
             {designWorkspace.scope ? (
               <div className={styles.studioRibbonItemMuted}>Scope: {designWorkspace.scope}</div>
             ) : null}
-          </div>
-          <div className={styles.studioRibbonGroupActions}>
-            <div className={styles.studioCommandActions}>
-              {activeViewId ? (
-                <Tooltip title="Save view">
-                  <Button
-                    size="small"
-                    type="text"
-                    icon={<CloudOutlined />}
-                    aria-label="Save view"
-                    onClick={() => saveActiveView()}
-                    disabled={presentationReadOnly}
-                  />
-                </Tooltip>
-              ) : null}
-              {activeViewId ? (
-                <Dropdown
-                  placement="bottomRight"
-                  trigger={['click']}
-                  menu={{
-                    items: [
-                      {
-                        key: 'rename',
-                        label: 'Rename',
-                        icon: <EditOutlined />,
-                        onClick: handleRenameActiveView,
-                        disabled: presentationReadOnly,
-                      },
-                      {
-                        key: 'duplicate',
-                        label: 'Duplicate',
-                        icon: <PlusSquareOutlined />,
-                        onClick: handleDuplicateActiveView,
-                        disabled: presentationReadOnly,
-                      },
-                      {
-                        key: 'export-png',
-                        label: 'Export PNG',
-                        onClick: handleExportActiveViewPng,
-                      },
-                      {
-                        key: 'export-json',
-                        label: 'Export JSON',
-                        onClick: handleExportActiveViewJson,
-                      },
-                      {
-                        type: 'divider',
-                      },
-                      {
-                        key: 'delete',
-                        label: 'Delete',
-                        danger: true,
-                        onClick: handleDeleteActiveView,
-                        disabled: presentationReadOnly,
-                      },
-                    ],
-                  }}
-                >
-                  <Tooltip title="View actions">
-                    <Button
-                      size="small"
-                      type="text"
-                      icon={<EllipsisOutlined />}
-                      aria-label="View actions"
-                    />
-                  </Tooltip>
-                </Dropdown>
-              ) : null}
-              {canModelMode ? (
-                <>
-                  <Tooltip title="Save workspace">
-                    <Button
-                      size="small"
-                      type="text"
-                      icon={<CloudOutlined />}
-                      aria-label="Save workspace"
-                      onClick={saveWorkspaceDraft}
-                      disabled={designWorkspace.status === 'COMMITTED'}
-                    />
-                  </Tooltip>
-                  <Tooltip title="Commit workspace">
-                    <Button
-                      size="small"
-                      type="text"
-                      icon={<LinkOutlined />}
-                      aria-label="Commit workspace"
-                      onClick={() => setCommitOpen(true)}
-                      disabled={commitDisabled}
-                    />
-                  </Tooltip>
-                  <Tooltip title="Edit workspace">
-                    <Button
-                      size="small"
-                      type="text"
-                      icon={<EditOutlined />}
-                      aria-label="Edit workspace"
-                      onClick={() => {
-                        workspaceForm.setFieldsValue({
-                          name: designWorkspace.name,
-                          description: designWorkspace.description || '',
-                          scope: designWorkspace.scope || '',
-                          status: designWorkspace.status,
-                        });
-                        setWorkspaceModalOpen(true);
-                      }}
-                    />
-                  </Tooltip>
-                  <Dropdown
-                    placement="bottomRight"
-                    trigger={['click']}
-                    menu={{
-                      items: [
-                        {
-                          key: 'discard-workspace',
-                          label: 'Discard workspace',
-                          icon: <DeleteOutlined />,
-                          onClick: () => setDiscardOpen(true),
-                        },
-                      ],
-                    }}
-                  >
-                    <Tooltip title="More actions">
-                      <Button size="small" type="text" icon={<EllipsisOutlined />} aria-label="More actions" />
-                    </Tooltip>
-                  </Dropdown>
-                </>
-              ) : null}
-              <Tooltip title="Exit studio">
-                <Button
-                  size="small"
-                  type="primary"
-                  icon={<LogoutOutlined />}
-                  aria-label="Exit studio"
-                  onClick={handleExit}
-                />
-              </Tooltip>
-            </div>
           </div>
         </div>
       </div>
@@ -4690,6 +6465,27 @@ const StudioShell: React.FC<StudioShellProps> = ({
         </div>
       </div>
 
+      {visibleDesignPrompts.length > 0 ? (
+        <div className={styles.studioPromptRow}>
+          <Space direction="vertical" size="small" style={{ width: '100%' }}>
+            {visibleDesignPrompts.map((prompt) => (
+              <Alert
+                key={prompt.id}
+                type="info"
+                showIcon
+                message={prompt.title}
+                description={prompt.description}
+                action={
+                  <Button size="small" onClick={() => dismissDesignPrompt(prompt.id)}>
+                    Don’t show again
+                  </Button>
+                }
+              />
+            ))}
+          </Space>
+        </div>
+      ) : null}
+
       <div className={styles.studioViewTabs}>
         <Tabs
           type="editable-card"
@@ -4715,84 +6511,13 @@ const StudioShell: React.FC<StudioShellProps> = ({
         }}
       >
         <div className={styles.studioCenter}>
-          {pendingRelationshipType ? (
-            <Alert
-              type={relationshipDraft.valid === false ? 'error' : relationshipDraft.valid ? 'success' : 'info'}
-              showIcon
-              message={`Relationship drawing: ${pendingRelationshipType.replace(/_/g, ' ')}`}
-              description={
-                relationshipDraft.message ??
-                'Click a source and drag to a target. Validation appears here before confirm.'
-              }
-              action={
-                <Space direction="vertical" size={8}>
-                  <Space>
-                    <Button
-                      size="small"
-                      onClick={() => {
-                        setRepoEndpointMode('source');
-                        repoEndpointForm.resetFields();
-                        setRepoEndpointOpen(true);
-                      }}
-                    >
-                      Pick repo source
-                    </Button>
-                    <Button
-                      size="small"
-                      onClick={() => {
-                        setRepoEndpointMode('target');
-                        repoEndpointForm.resetFields();
-                        setRepoEndpointOpen(true);
-                      }}
-                    >
-                      Pick repo target
-                    </Button>
-                  </Space>
-                  {canConfirmRelationship ? (
-                    <Space>
-                      <Button size="small" type="primary" onClick={confirmRelationshipDraft}>
-                        Confirm
-                      </Button>
-                      <Button
-                        size="small"
-                        onClick={() => {
-                          setRelationshipTargetId(null);
-                          if (relationshipSourceId) {
-                            setRelationshipDraft({
-                              sourceId: relationshipSourceId,
-                              targetId: null,
-                              valid: null,
-                              message: 'Target cleared. Choose another target to validate.',
-                              dragging: false,
-                            });
-                          } else {
-                            setRelationshipDraft({
-                              sourceId: null,
-                              targetId: null,
-                              valid: null,
-                              message: null,
-                              dragging: false,
-                            });
-                          }
-                          clearRelationshipDraftArtifacts();
-                        }}
-                      >
-                        Cancel
-                      </Button>
-                    </Space>
-                  ) : null}
-                </Space>
-              }
-              style={{ marginBottom: 8 }}
-            />
-          ) : null}
           <div
             className={styles.studioCanvas}
             style={{
               cursor:
                 toolMode === 'CREATE_ELEMENT'
                   ? 'crosshair'
-                  : toolMode === 'CREATE_RELATIONSHIP'
+                  : toolMode === 'CREATE_RELATIONSHIP' || toolMode === 'CREATE_FREE_CONNECTOR'
                     ? 'alias'
                     : toolMode === 'PAN'
                       ? 'grab'
@@ -4800,6 +6525,18 @@ const StudioShell: React.FC<StudioShellProps> = ({
               backgroundSize: `${gridSize}px ${gridSize}px`,
             }}
             ref={containerRef}
+            onPointerDownCapture={(e) => {
+              if (toolModeRef.current !== 'CREATE_RELATIONSHIP' || !pendingRelationshipTypeRef.current) return;
+              if (!relationshipDraftRef.current.dragging) return;
+              if (connectionPointerActiveRef.current) return;
+              connectionPointerIdRef.current = e.pointerId;
+              connectionPointerActiveRef.current = true;
+              try {
+                containerRef.current?.setPointerCapture(e.pointerId);
+              } catch {
+                // Best-effort only.
+              }
+            }}
             onMouseDown={(e) => {
               if (toolMode !== 'CREATE_ELEMENT' || !pendingElementType || !placementModeActive) return;
               const pos = toCanvasPosition(e.clientX, e.clientY);
@@ -4807,6 +6544,243 @@ const StudioShell: React.FC<StudioShellProps> = ({
               setElementDragActive(true);
               elementDragMovedRef.current = false;
               setElementDragGhost(null);
+            }}
+            onPointerDown={(e) => {
+              const currentToolMode = toolModeRef.current;
+              const currentRelationshipType = pendingRelationshipTypeRef.current;
+              if (currentToolMode !== 'CREATE_RELATIONSHIP' || !currentRelationshipType) return;
+              if (!containerRef.current) return;
+              const pos = toCanvasPosition(e.clientX, e.clientY);
+              if (!relationshipDraftRef.current.dragging) {
+                const node = findNodeAtPosition(pos);
+                if (node && !node.empty() && !node.data('draftTarget')) {
+                  const sourceId = String(node.id());
+                  if (sourceId && cyRef.current) {
+                    cyRef.current.nodes().removeClass('connectionSource');
+                    node.addClass('connectionSource');
+                    connectionPointerIdRef.current = e.pointerId;
+                    connectionPointerActiveRef.current = true;
+                    try {
+                      containerRef.current.setPointerCapture(e.pointerId);
+                    } catch {
+                      // Best-effort only.
+                    }
+                    connectionDragLockRef.current = true;
+                    setConnectionDragLocked(true);
+                    lockNodesForConnection();
+                    const cy = cyRef.current;
+                    const validTargets = relationshipEligibilityRef.current.get(sourceId) || getValidTargetsForSource(sourceId, currentRelationshipType);
+                    cy.nodes().forEach((n) => {
+                      const id = String(n.id());
+                      if (id === sourceId) return;
+                      n.removeClass('validTarget');
+                      n.removeClass('invalidTarget');
+                      n.removeClass('validTargetCandidate');
+                      if (validTargets.has(id)) n.addClass('validTargetCandidate');
+                    });
+
+                    if (!cy.getElementById(DRAFT_EDGE_ID).empty()) {
+                      cy.getElementById(DRAFT_EDGE_ID).remove();
+                    }
+                    removeDraftTarget();
+                    cy.add({
+                      data: {
+                        id: DRAFT_EDGE_ID,
+                        source: sourceId,
+                        target: sourceId,
+                        draft: true,
+                        relationshipStyle: relationshipStyleForType(currentRelationshipType),
+                        relationshipType: currentRelationshipType,
+                      },
+                    });
+                    updateDraftEdgeTarget(pos, null, true, sourceId);
+                    setRelationshipSourceId(sourceId);
+                    setRelationshipTargetId(null);
+                    updateRelationshipDraft({
+                      sourceId,
+                      targetId: null,
+                      valid: null,
+                      message: 'Drag to a target element to validate.',
+                      dragging: true,
+                    });
+                  }
+                }
+              }
+
+              if (relationshipDraftRef.current.dragging && cyRef.current) {
+                if (!connectionPointerActiveRef.current) {
+                  connectionPointerIdRef.current = e.pointerId;
+                  connectionPointerActiveRef.current = true;
+                  try {
+                    containerRef.current.setPointerCapture(e.pointerId);
+                  } catch {
+                    // Best-effort only.
+                  }
+                }
+                if (cyRef.current.getElementById(DRAFT_EDGE_ID).empty()) return;
+                updateDraftEdgeTarget(pos, null, false, relationshipDraftRef.current.sourceId);
+              }
+            }}
+            onPointerMove={(e) => {
+              if (!connectionPointerActiveRef.current) return;
+              if (!relationshipDraftRef.current.dragging && !freeConnectorDragRef.current.dragging) return;
+              if (!cyRef.current) return;
+              const relationshipType = pendingRelationshipTypeRef.current;
+              if (relationshipDraftRef.current.dragging && !relationshipType) return;
+              if (relationshipDraftRef.current.dragging && cyRef.current.getElementById(DRAFT_EDGE_ID).empty()) return;
+              const pos = toCanvasPosition(e.clientX, e.clientY);
+              if (relationshipDraftRef.current.dragging) {
+                const hoverNode = findNodeAtPosition(pos);
+                cyRef.current.nodes().removeClass('validTarget').removeClass('invalidTarget');
+                if (hoverNode && !hoverNode.empty()) {
+                  const targetId = String(hoverNode.id());
+                  const validation = validateRelationshipEndpoints(relationshipDraftRef.current.sourceId, targetId, relationshipType);
+                  if (validation.valid) {
+                    hoverNode.addClass('validTarget');
+                    updateDraftEdgeTarget(pos, hoverNode);
+                  } else {
+                    hoverNode.addClass('invalidTarget');
+                    updateDraftEdgeTarget(pos, null, false, relationshipDraftRef.current.sourceId);
+                  }
+                } else {
+                  updateDraftEdgeTarget(pos, null, false, relationshipDraftRef.current.sourceId);
+                }
+              } else if (freeConnectorDragRef.current.dragging) {
+                const hoverNode = findNodeAtPosition(pos);
+                updateDraftEdgeTarget(pos, hoverNode, true, freeConnectorDragRef.current.sourceId);
+              }
+            }}
+            onMouseMove={(e) => {
+              if (!relationshipDraftRef.current.dragging && !freeConnectorDragRef.current.dragging) return;
+              if (!cyRef.current) return;
+              const relationshipType = pendingRelationshipTypeRef.current;
+              if (relationshipDraftRef.current.dragging && !relationshipType) return;
+              if (relationshipDraftRef.current.dragging && cyRef.current.getElementById(DRAFT_EDGE_ID).empty()) return;
+              const pos = toCanvasPosition(e.clientX, e.clientY);
+              if (relationshipDraftRef.current.dragging) {
+                const hoverNode = findNodeAtPosition(pos);
+                cyRef.current.nodes().removeClass('validTarget').removeClass('invalidTarget');
+                if (hoverNode && !hoverNode.empty()) {
+                  const targetId = String(hoverNode.id());
+                  const validation = validateRelationshipEndpoints(relationshipDraftRef.current.sourceId, targetId, relationshipType);
+                  if (validation.valid) {
+                    hoverNode.addClass('validTarget');
+                    updateDraftEdgeTarget(pos, hoverNode);
+                  } else {
+                    hoverNode.addClass('invalidTarget');
+                    updateDraftEdgeTarget(pos, null, false, relationshipDraftRef.current.sourceId);
+                  }
+                } else {
+                  updateDraftEdgeTarget(pos, null, false, relationshipDraftRef.current.sourceId);
+                }
+              } else if (freeConnectorDragRef.current.dragging) {
+                const hoverNode = findNodeAtPosition(pos);
+                updateDraftEdgeTarget(pos, hoverNode, true, freeConnectorDragRef.current.sourceId);
+              }
+            }}
+            onPointerUp={(e) => {
+              if (connectionPointerActiveRef.current && containerRef.current && connectionPointerIdRef.current !== null) {
+                try {
+                  containerRef.current.releasePointerCapture(connectionPointerIdRef.current);
+                } catch {
+                  // Best-effort only.
+                }
+              }
+              connectionPointerActiveRef.current = false;
+              connectionPointerIdRef.current = null;
+
+              const currentToolMode = toolModeRef.current;
+              const currentRelationshipType = pendingRelationshipTypeRef.current;
+              if (currentToolMode !== 'CREATE_RELATIONSHIP' || !currentRelationshipType) return;
+              if (!relationshipDraftRef.current.dragging || !relationshipDraftRef.current.sourceId) {
+                releaseConnectionDragLock();
+                return;
+              }
+
+              const pos = toCanvasPosition(e.clientX, e.clientY);
+              const node = findNodeAtPosition(pos);
+              if (!node || node.empty()) {
+                updateRelationshipDraft({ sourceId: null, targetId: null, valid: null, message: null, dragging: false });
+                setRelationshipSourceId(null);
+                setRelationshipTargetId(null);
+                clearRelationshipDraftArtifacts();
+                releaseConnectionDragLock();
+                setPendingRelationshipType(null);
+                pendingRelationshipTypeRef.current = null;
+                setToolMode('SELECT');
+                toolModeRef.current = 'SELECT';
+                return;
+              }
+
+              const targetId = String(node.id());
+              if (!targetId || targetId === relationshipDraftRef.current.sourceId) {
+                updateRelationshipDraft({ sourceId: null, targetId: null, valid: null, message: null, dragging: false });
+                setRelationshipSourceId(null);
+                setRelationshipTargetId(null);
+                clearRelationshipDraftArtifacts();
+                releaseConnectionDragLock();
+                setPendingRelationshipType(null);
+                pendingRelationshipTypeRef.current = null;
+                setToolMode('SELECT');
+                toolModeRef.current = 'SELECT';
+                return;
+              }
+
+              const validation = validateRelationshipEndpoints(relationshipDraftRef.current.sourceId, targetId, currentRelationshipType);
+              if (!validation.valid) {
+                updateRelationshipDraft({ sourceId: null, targetId: null, valid: false, message: null, dragging: false });
+                setRelationshipSourceId(null);
+                setRelationshipTargetId(null);
+                clearRelationshipDraftArtifacts();
+                releaseConnectionDragLock();
+                setPendingRelationshipType(null);
+                pendingRelationshipTypeRef.current = null;
+                setToolMode('SELECT');
+                toolModeRef.current = 'SELECT';
+                return;
+              }
+
+              const creation = createRelationshipFromCanvas({
+                fromId: relationshipDraftRef.current.sourceId,
+                toId: targetId,
+                type: currentRelationshipType,
+              });
+              if (!creation.ok) {
+                // Silent failure to avoid disrupting the drag flow.
+              }
+              updateRelationshipDraft({ sourceId: null, targetId: null, valid: null, message: null, dragging: false });
+              clearRelationshipDraftArtifacts();
+              setRelationshipSourceId(null);
+              setRelationshipTargetId(null);
+              setPendingRelationshipType(null);
+              pendingRelationshipTypeRef.current = null;
+              setToolMode('SELECT');
+              toolModeRef.current = 'SELECT';
+              releaseConnectionDragLock();
+            }}
+            onPointerCancel={() => {
+              if (connectionPointerActiveRef.current && containerRef.current && connectionPointerIdRef.current !== null) {
+                try {
+                  containerRef.current.releasePointerCapture(connectionPointerIdRef.current);
+                } catch {
+                  // Best-effort only.
+                }
+              }
+              connectionPointerActiveRef.current = false;
+              connectionPointerIdRef.current = null;
+              if (!relationshipDraftRef.current.dragging) {
+                releaseConnectionDragLock();
+                return;
+              }
+              updateRelationshipDraft({ sourceId: null, targetId: null, valid: null, message: null, dragging: false });
+              setRelationshipSourceId(null);
+              setRelationshipTargetId(null);
+              clearRelationshipDraftArtifacts();
+              releaseConnectionDragLock();
+              setPendingRelationshipType(null);
+              pendingRelationshipTypeRef.current = null;
+              setToolMode('SELECT');
+              toolModeRef.current = 'SELECT';
             }}
             onDragOver={(e) => {
               e.preventDefault();
@@ -4819,15 +6793,99 @@ const StudioShell: React.FC<StudioShellProps> = ({
                 message.warning('Workspace is read-only. Reopen draft to add elements.');
                 return;
               }
+              const droppedExistingElementId = e.dataTransfer?.getData('application/x-ea-element-id');
+              const droppedPlainId = e.dataTransfer?.getData('text/plain');
               const droppedType = e.dataTransfer?.getData('application/x-ea-element-type');
-              if (!droppedType) return;
-              setToolMode('CREATE_ELEMENT');
-              setPendingElementType(droppedType as ObjectType);
-              setPendingRelationshipType(null);
-              setRelationshipSourceId(null);
-              setRelationshipTargetId(null);
-              setPlacementModeActive(true);
-              message.info(`Create ${droppedType}: click the canvas to place.`);
+              const droppedVisualKind = e.dataTransfer?.getData('application/x-ea-visual-kind');
+              const droppedRelationshipType = e.dataTransfer?.getData('application/x-ea-relationship-type');
+
+              const resolvedExplorerId = (() => {
+                if (droppedExistingElementId) return droppedExistingElementId;
+                if (droppedPlainId && eaRepository?.objects.has(droppedPlainId)) return droppedPlainId;
+                return '';
+              })();
+
+              if (resolvedExplorerId) {
+                const existing = eaRepository?.objects.get(resolvedExplorerId);
+                if (!existing) {
+                  message.warning('Selected element no longer exists in the repository.');
+                  return;
+                }
+                if (!validateStudioElementType(existing.type as ObjectType)) return;
+                const resolvedShape = resolveEaShapeForObjectType(existing.type as ObjectType);
+                if (!resolvedShape) {
+                  message.error(`EA Shape Registry SVG mapping is missing for element type "${existing.type}".`);
+                  return;
+                }
+                const pos = toCanvasPosition(e.clientX, e.clientY);
+                stageExistingElement(resolvedExplorerId, pos);
+                if (cyRef.current) {
+                  const node = cyRef.current.getElementById(resolvedExplorerId);
+                  if (node && !node.empty()) {
+                    const label = nameForObject(existing as any);
+                    const visualData = buildEaVisualData({ type: existing.type as ObjectType, attributes: existing.attributes ?? undefined });
+                    node.data('label', label);
+                    node.data('elementType', existing.type);
+                    node.data('eaShape', visualData.eaShape);
+                    node.data('eaIcon', visualData.eaIcon);
+                    node.data('eaColor', visualData.eaColor);
+                    node.data('eaBorder', visualData.eaBorder);
+                    node.data('eaVisualKind', visualData.eaVisualKind);
+                  }
+                }
+                setToolMode('SELECT');
+                resetToolDrafts();
+                return;
+              }
+
+
+              if (droppedType) {
+                const visualLabel = droppedVisualKind
+                  ? resolveElementVisualLabel(droppedType as ObjectType, droppedVisualKind)
+                  : droppedType;
+                const visual = resolveEaVisualForElement({
+                  type: droppedType as ObjectType,
+                  visualKindOverride: droppedVisualKind || undefined,
+                });
+                if (!visual) {
+                  message.error(`Toolbox item "${visualLabel}" is missing an EA Shape Registry SVG mapping (ArchiMate/drawio).`);
+                  return;
+                }
+                const mappedShape = resolveEaShapeForObjectType(droppedType as ObjectType);
+                if (!mappedShape) {
+                  message.error(`Toolbox item "${visualLabel}" is missing an EA Shape Registry SVG mapping (ArchiMate/drawio).`);
+                  return;
+                }
+                if (!validateStudioElementType(droppedType as ObjectType)) return;
+                const pos = toCanvasPosition(e.clientX, e.clientY);
+                setPendingElementType(droppedType as ObjectType);
+                setPendingElementVisualKind(droppedVisualKind || null);
+                setPlacement({ x: pos.x, y: pos.y });
+                form.setFieldsValue({ name: `New ${visualLabel}`, description: '' });
+                setCreateModalOpen(true);
+                setToolMode('SELECT');
+                setPlacementModeActive(false);
+                return;
+              }
+
+              if (droppedRelationshipType) {
+                if (!RELATIONSHIP_TYPE_DEFINITIONS[droppedRelationshipType as RelationshipType]) {
+                  message.error(
+                    `Toolbox item "${droppedRelationshipType}" is not yet wired to the canvas (missing relationship mapping).`,
+                  );
+                  return;
+                }
+                setToolMode('CREATE_RELATIONSHIP');
+                setPendingRelationshipType(droppedRelationshipType as RelationshipType);
+                toolModeRef.current = 'CREATE_RELATIONSHIP';
+                pendingRelationshipTypeRef.current = droppedRelationshipType as RelationshipType;
+                setPendingElementType(null);
+                setPendingElementVisualKind(null);
+                setRelationshipSourceId(null);
+                setRelationshipTargetId(null);
+                setPlacementModeActive(false);
+              }
+
             }}
           />
           {nodeContextMenu ? (
@@ -4892,40 +6950,93 @@ const StudioShell: React.FC<StudioShellProps> = ({
               onClose={closeRightPanel}
             >
               <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-                <Space align="center" style={{ width: '100%', justifyContent: 'space-between' }}>
-                  <Typography.Text strong>Properties</Typography.Text>
-                  <Button size="small" onClick={() => setRightPanelMode(RightPanelMode.STUDIO)}>
-                    Open Inspector
-                  </Button>
-                </Space>
-
-                {selectedNodeIds.length > 1 ? (
-                  <div style={{ display: 'grid', gap: 8 }}>
-                    <Alert
-                      type="info"
-                      showIcon
-                      message={`Selected elements: ${selectedNodeIds.length}`}
-                      description="Use bulk edit to update shared fields for staged elements."
-                    />
-                    <Space wrap>
-                      <Button type="default" onClick={() => setBulkEditOpen(true)}>
-                        Bulk edit selected
-                      </Button>
-                      <Button type="default" onClick={() => distributeSelectedNodes('x')}>
-                        Distribute horizontally
-                      </Button>
-                      <Button type="default" onClick={() => distributeSelectedNodes('y')}>
-                        Distribute vertically
-                      </Button>
-                      <Button type="default" onClick={cleanAlignToGrid}>
-                        Clean align (snap)
-                      </Button>
-                      <Button type="default" onClick={resetLayout}>
-                        Reset layout
+                {toolboxPanel}
+                {!toolboxExpanded ? (
+                  <>
+                    {selectedFreeShape ? (
+                      <div style={{ display: 'grid', gap: 8 }}>
+                        <Alert
+                          type="info"
+                          showIcon
+                          message="Free diagram shape"
+                          description="Visual-only shape. EA validation and governance do not apply."
+                        />
+                        <Form layout="vertical">
+                          <Form.Item label="Label">
+                            <Input
+                              value={selectedFreeShape.label}
+                              onChange={(e) => updateFreeShape(selectedFreeShape.id, { label: e.target.value })}
+                            />
+                          </Form.Item>
+                          <Form.Item label="Width">
+                            <InputNumber
+                              min={40}
+                              max={800}
+                              value={selectedFreeShape.width}
+                              onChange={(value) => {
+                                const next = Number(value);
+                                if (!Number.isFinite(next)) return;
+                                updateFreeShape(selectedFreeShape.id, { width: Math.max(40, Math.round(next)) });
+                              }}
+                            />
+                          </Form.Item>
+                          <Form.Item label="Height">
+                            <InputNumber
+                              min={40}
+                              max={800}
+                              value={selectedFreeShape.height}
+                              onChange={(value) => {
+                                const next = Number(value);
+                                if (!Number.isFinite(next)) return;
+                                updateFreeShape(selectedFreeShape.id, { height: Math.max(40, Math.round(next)) });
+                              }}
+                            />
+                          </Form.Item>
+                        </Form>
+                      </div>
+                    ) : null}
+                    {selectedFreeConnectorId ? (
+                      <Alert
+                        type="info"
+                        showIcon
+                        message="Free connector"
+                        description="Visual-only connector. EA validation and governance do not apply."
+                      />
+                    ) : null}
+                    <Space align="center" style={{ width: '100%', justifyContent: 'space-between' }}>
+                      <Typography.Text strong>Properties</Typography.Text>
+                      <Button size="small" onClick={() => setRightPanelMode(RightPanelMode.STUDIO)}>
+                        Open Inspector
                       </Button>
                     </Space>
-                  </div>
-                ) : null}
+
+                    {selectedNodeIds.length > 1 ? (
+                      <div style={{ display: 'grid', gap: 8 }}>
+                        <Alert
+                          type="info"
+                          showIcon
+                          message={`Selected elements: ${selectedNodeIds.length}`}
+                          description="Use bulk edit to update shared fields for staged elements."
+                        />
+                        <Space wrap>
+                          <Button type="default" onClick={() => setBulkEditOpen(true)}>
+                            Bulk edit selected
+                          </Button>
+                          <Button type="default" onClick={() => distributeSelectedNodes('x')}>
+                            Distribute horizontally
+                          </Button>
+                          <Button type="default" onClick={() => distributeSelectedNodes('y')}>
+                            Distribute vertically
+                          </Button>
+                          <Button type="default" onClick={cleanAlignToGrid}>
+                            Clean align (snap)
+                          </Button>
+                          <Button type="default" onClick={resetLayout}>
+                            Reset layout
+                          </Button>
+                        </Space>
+                      </div>
+                    ) : null}
 
                 {!propertiesExpanded ? (
                   <div className={styles.studioCompactProperties}>
@@ -5018,56 +7129,24 @@ const StudioShell: React.FC<StudioShellProps> = ({
                             <Alert
                               type="warning"
                               showIcon
-                              message="Marked for removal"
-                              description="This element will be removed from the repository on commit."
-                              action={
-                                <Button
-                                  size="small"
-                                  onClick={() => {
-                                    setStagedElements((prev) =>
-                                      prev.map((el) =>
-                                        el.id === stagedSelectedElement.id
-                                          ? {
-                                              ...el,
-                                              status: 'STAGED',
-                                              attributes: { ...(el.attributes ?? {}), _deleted: false },
-                                            }
-                                          : el,
-                                      ),
-                                    );
-                                  }}
-                                >
-                                  Undo removal
-                                </Button>
-                              }
+                              message="Marked for removal in Explorer"
+                              description="This element was marked for deletion from the repository in Explorer and will be removed on commit. Canvas actions cannot undo repository deletions."
                             />
                           ) : (
-                            <Button
-                              danger
-                              onClick={() => {
-                                setStagedElements((prev) =>
-                                  prev.map((el) =>
-                                    el.id === stagedSelectedElement.id
-                                      ? {
-                                          ...el,
-                                          status: 'DISCARDED',
-                                          attributes: { ...(el.attributes ?? {}), _deleted: true },
-                                        }
-                                      : el,
-                                  ),
-                                );
-                              }}
-                            >
-                              Mark for removal
-                            </Button>
+                            <Alert
+                              type="info"
+                              showIcon
+                              message="Explorer is the source of truth"
+                              description="To delete this element everywhere, delete it in Explorer. Removing it here only affects this workspace view."
+                            />
                           )
                         ) : null}
                         <Button
                           danger
                           onClick={() => {
                             Modal.confirm({
-                              title: 'Delete staged element?',
-                              content: 'This removes the element from the workspace only. Repository remains unchanged.',
+                              title: 'Remove from workspace view?',
+                              content: 'This removes the element from this workspace view only. Repository remains unchanged.',
                               okText: 'Delete',
                               okButtonProps: { danger: true },
                               cancelText: 'Cancel',
@@ -5075,7 +7154,7 @@ const StudioShell: React.FC<StudioShellProps> = ({
                             });
                           }}
                         >
-                          Delete staged element
+                          Remove from workspace
                         </Button>
                         {!isMarkedForRemoval(stagedSelectedElement.attributes) ? (
                           <Form
@@ -5311,6 +7390,8 @@ const StudioShell: React.FC<StudioShellProps> = ({
                     )}
                   </>
                 )}
+                  </>
+                ) : null}
               </Space>
             </RightPanelController>
           ) : (
@@ -5320,181 +7401,186 @@ const StudioShell: React.FC<StudioShellProps> = ({
               onClose={closeRightPanel}
             >
               <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-                <div style={{ display: 'grid', gap: 8 }}>
-                  <Typography.Text strong>View status</Typography.Text>
-                  {activeViewName ? (
-                    <Descriptions size="small" column={1} bordered>
-                      <Descriptions.Item label="View">{activeViewName}</Descriptions.Item>
-                      <Descriptions.Item label="Status">{viewSaveLabel ?? 'Saved'}</Descriptions.Item>
-                      <Descriptions.Item label="Last saved">
-                        {lastAutoSaveAt ? new Date(lastAutoSaveAt).toLocaleTimeString() : '—'}
-                      </Descriptions.Item>
-                    </Descriptions>
-                  ) : (
-                    <Empty description="No view selected" />
-                  )}
-                </div>
+                {toolboxPanel}
+                {!toolboxExpanded ? (
+                  <>
+                    <div style={{ display: 'grid', gap: 8 }}>
+                      <Typography.Text strong>View status</Typography.Text>
+                      {activeViewName ? (
+                        <Descriptions size="small" column={1} bordered>
+                          <Descriptions.Item label="View">{activeViewName}</Descriptions.Item>
+                          <Descriptions.Item label="Status">{viewSaveLabel ?? 'Saved'}</Descriptions.Item>
+                          <Descriptions.Item label="Last saved">
+                            {lastAutoSaveAt ? new Date(lastAutoSaveAt).toLocaleTimeString() : '—'}
+                          </Descriptions.Item>
+                        </Descriptions>
+                      ) : (
+                        <Empty description="No view selected" />
+                      )}
+                    </div>
 
-                {activeView ? (
-                  <div style={{ display: 'grid', gap: 8 }}>
-                    <Typography.Text strong>View actions</Typography.Text>
-                    <Space wrap>
-                      <Button size="small" onClick={handleRenameActiveView} disabled={presentationReadOnly}>
-                        Rename
+                    {activeView ? (
+                      <div style={{ display: 'grid', gap: 8 }}>
+                        <Typography.Text strong>View actions</Typography.Text>
+                        <Space wrap>
+                          <Button size="small" onClick={handleRenameActiveView} disabled={presentationReadOnly}>
+                            Rename
+                          </Button>
+                          <Button size="small" onClick={handleDuplicateActiveView} disabled={presentationReadOnly}>
+                            Duplicate
+                          </Button>
+                          <Button size="small" onClick={handleExportActiveViewPng}>
+                            Export PNG
+                          </Button>
+                          <Button size="small" onClick={handleExportActiveViewJson}>
+                            Export JSON
+                          </Button>
+                          <Button size="small" danger onClick={handleDeleteActiveView} disabled={presentationReadOnly}>
+                            Delete
+                          </Button>
+                        </Space>
+                        <Descriptions size="small" column={1} bordered>
+                          <Descriptions.Item label="Viewpoint">
+                            {ViewpointRegistry.get(activeView.viewpointId)?.name ?? activeView.viewpointId}
+                          </Descriptions.Item>
+                          <Descriptions.Item label="Status">{activeView.status}</Descriptions.Item>
+                          <Descriptions.Item label="Created by">
+                            {activeView.createdBy || 'Unknown'}
+                          </Descriptions.Item>
+                          <Descriptions.Item label="Created at">
+                            {activeView.createdAt ? new Date(activeView.createdAt).toLocaleString() : '—'}
+                          </Descriptions.Item>
+                          <Descriptions.Item label="Description">
+                            {activeView.description || 'No description'}
+                          </Descriptions.Item>
+                        </Descriptions>
+                      </div>
+                    ) : null}
+
+                    {activeView ? (
+                      <div style={{ display: 'grid', gap: 8 }}>
+                        <Typography.Text strong>View Summary</Typography.Text>
+                        <Form form={viewSummaryForm} layout="vertical">
+                          <Form.Item label="Purpose" name="purpose">
+                            <Input.TextArea rows={2} placeholder="Why this view exists" disabled={presentationReadOnly} />
+                          </Form.Item>
+                          <Form.Item label="Scope" name="scope">
+                            <Input.TextArea rows={2} placeholder="What this view covers" disabled={presentationReadOnly} />
+                          </Form.Item>
+                          <Form.Item label="Key insights" name="insights">
+                            <Input.TextArea rows={3} placeholder="Executive takeaways" disabled={presentationReadOnly} />
+                          </Form.Item>
+                          <Button type="primary" size="small" onClick={() => void saveViewSummary()} disabled={presentationReadOnly}>
+                            Save summary
+                          </Button>
+                        </Form>
+                        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                          Stored in view metadata (not rendered on canvas).
+                        </Typography.Text>
+                      </div>
+                    ) : null}
+
+                    <div style={{ display: 'grid', gap: 8 }}>
+                      <Typography.Text strong>Inspector</Typography.Text>
+                      <Button
+                        size="small"
+                        type="primary"
+                        onClick={handleOpenProperties}
+                      >
+                        Open Properties
                       </Button>
-                      <Button size="small" onClick={handleDuplicateActiveView} disabled={presentationReadOnly}>
-                        Duplicate
-                      </Button>
-                      <Button size="small" onClick={handleExportActiveViewPng}>
-                        Export PNG
-                      </Button>
-                      <Button size="small" onClick={handleExportActiveViewJson}>
-                        Export JSON
-                      </Button>
-                      <Button size="small" danger onClick={handleDeleteActiveView} disabled={presentationReadOnly}>
-                        Delete
-                      </Button>
-                    </Space>
-                    <Descriptions size="small" column={1} bordered>
-                      <Descriptions.Item label="Viewpoint">
-                        {ViewpointRegistry.get(activeView.viewpointId)?.name ?? activeView.viewpointId}
-                      </Descriptions.Item>
-                      <Descriptions.Item label="Status">{activeView.status}</Descriptions.Item>
-                      <Descriptions.Item label="Created by">
-                        {activeView.createdBy || 'Unknown'}
-                      </Descriptions.Item>
-                      <Descriptions.Item label="Created at">
-                        {activeView.createdAt ? new Date(activeView.createdAt).toLocaleString() : '—'}
-                      </Descriptions.Item>
-                      <Descriptions.Item label="Description">
-                        {activeView.description || 'No description'}
-                      </Descriptions.Item>
-                    </Descriptions>
-                  </div>
+                    </div>
+
+                    <div style={{ display: 'grid', gap: 8 }}>
+                      <Typography.Text strong>Validation</Typography.Text>
+                      <Collapse
+                        ghost
+                        expandIconPosition="end"
+                        items={[
+                          {
+                            key: 'validation',
+                            label: (
+                              <Tooltip title="Validation">
+                                <Tag color="red" style={{ marginInlineStart: 0 }}>
+                                  ❌ {validationCount}
+                                </Tag>
+                              </Tooltip>
+                            ),
+                            children: !validationGateOpen ? (
+                              <Empty description="Validation appears after you model or save." />
+                            ) : validationSummary && (validationSummary.errorCount > 0 || validationSummary.warningCount > 0 || validationSummary.infoCount > 0) ? (
+                              <div className={styles.studioValidationList}>
+                                {validationSummary.errorHighlights.map((m) => (
+                                  <Alert key={`err:${m}`} type="error" showIcon message={m} />
+                                ))}
+                                {validationSummary.warningHighlights.map((m) => (
+                                  <Alert key={`warn:${m}`} type="warning" showIcon message={m} />
+                                ))}
+                                {validationSummary.infoHighlights.map((m) => (
+                                  <Alert key={`info:${m}`} type="info" showIcon message={m} />
+                                ))}
+                              </div>
+                            ) : (
+                              <Empty description="No validation messages yet" />
+                            ),
+                          },
+                        ]}
+                      />
+                    </div>
+
+                    <div style={{ display: 'grid', gap: 8 }}>
+                      <Typography.Text strong>Legend</Typography.Text>
+                      <Collapse
+                        ghost
+                        defaultActiveKey={['legend']}
+                        expandIconPosition="end"
+                        items={[
+                          {
+                            key: 'legend',
+                            label: 'Viewpoint legend',
+                            children: activeViewpoint ? (
+                              <Space direction="vertical" size="small" style={{ width: '100%' }}>
+                                <Typography.Text type="secondary">Elements</Typography.Text>
+                                <ul style={{ margin: 0, paddingLeft: 18 }}>
+                                  {activeViewpoint.allowedElementTypes.map((type) => (
+                                    <li key={`el-${type}`}>
+                                      <strong>{type}</strong>: {OBJECT_TYPE_DEFINITIONS[type]?.description ?? 'Element'}
+                                    </li>
+                                  ))}
+                                </ul>
+
+                                <Typography.Text type="secondary">Relationships</Typography.Text>
+                                <ul style={{ margin: 0, paddingLeft: 18 }}>
+                                  {activeViewpoint.allowedRelationshipTypes.map((type) => (
+                                    <li key={`rel-${type}`}>
+                                      <strong>{type.replace(/_/g, ' ')}</strong>:{' '}
+                                      {RELATIONSHIP_TYPE_DEFINITIONS[type]?.description ?? 'Relationship'}
+                                    </li>
+                                  ))}
+                                </ul>
+
+                                <Typography.Text type="secondary">Layout rules</Typography.Text>
+                                <Descriptions size="small" column={1} bordered>
+                                  <Descriptions.Item label="Diagram Type">
+                                    {activeViewpoint.name}
+                                  </Descriptions.Item>
+                                  <Descriptions.Item label="Layout engine">
+                                    {activeViewpoint.defaultLayout}
+                                  </Descriptions.Item>
+                                  <Descriptions.Item label="Grammar">
+                                    {activeViewpoint.description}
+                                  </Descriptions.Item>
+                                </Descriptions>
+                              </Space>
+                            ) : (
+                              <Empty description="No viewpoint selected" />
+                            ),
+                          },
+                        ]}
+                      />
+                    </div>
+                  </>
                 ) : null}
-
-                {activeView ? (
-                  <div style={{ display: 'grid', gap: 8 }}>
-                    <Typography.Text strong>View Summary</Typography.Text>
-                    <Form form={viewSummaryForm} layout="vertical">
-                      <Form.Item label="Purpose" name="purpose">
-                        <Input.TextArea rows={2} placeholder="Why this view exists" disabled={presentationReadOnly} />
-                      </Form.Item>
-                      <Form.Item label="Scope" name="scope">
-                        <Input.TextArea rows={2} placeholder="What this view covers" disabled={presentationReadOnly} />
-                      </Form.Item>
-                      <Form.Item label="Key insights" name="insights">
-                        <Input.TextArea rows={3} placeholder="Executive takeaways" disabled={presentationReadOnly} />
-                      </Form.Item>
-                      <Button type="primary" size="small" onClick={() => void saveViewSummary()} disabled={presentationReadOnly}>
-                        Save summary
-                      </Button>
-                    </Form>
-                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                      Stored in view metadata (not rendered on canvas).
-                    </Typography.Text>
-                  </div>
-                ) : null}
-
-                <div style={{ display: 'grid', gap: 8 }}>
-                  <Typography.Text strong>Inspector</Typography.Text>
-                  <Button
-                    size="small"
-                    type="primary"
-                    onClick={handleOpenProperties}
-                  >
-                    Open Properties
-                  </Button>
-                </div>
-
-                <div style={{ display: 'grid', gap: 8 }}>
-                  <Typography.Text strong>Validation</Typography.Text>
-                  <Collapse
-                    ghost
-                    expandIconPosition="end"
-                    items={[
-                      {
-                        key: 'validation',
-                        label: (
-                          <Tooltip title="Validation">
-                            <Tag color="red" style={{ marginInlineStart: 0 }}>
-                              ❌ {validationCount}
-                            </Tag>
-                          </Tooltip>
-                        ),
-                        children: !validationGateOpen ? (
-                          <Empty description="Validation appears after you model or save." />
-                        ) : validationSummary && (validationSummary.errorCount > 0 || validationSummary.warningCount > 0 || validationSummary.infoCount > 0) ? (
-                          <div className={styles.studioValidationList}>
-                            {validationSummary.errorHighlights.map((m) => (
-                              <Alert key={`err:${m}`} type="error" showIcon message={m} />
-                            ))}
-                            {validationSummary.warningHighlights.map((m) => (
-                              <Alert key={`warn:${m}`} type="warning" showIcon message={m} />
-                            ))}
-                            {validationSummary.infoHighlights.map((m) => (
-                              <Alert key={`info:${m}`} type="info" showIcon message={m} />
-                            ))}
-                          </div>
-                        ) : (
-                          <Empty description="No validation messages yet" />
-                        ),
-                      },
-                    ]}
-                  />
-                </div>
-
-                <div style={{ display: 'grid', gap: 8 }}>
-                  <Typography.Text strong>Legend</Typography.Text>
-                  <Collapse
-                    ghost
-                    defaultActiveKey={['legend']}
-                    expandIconPosition="end"
-                    items={[
-                      {
-                        key: 'legend',
-                        label: 'Viewpoint legend',
-                        children: activeViewpoint ? (
-                          <Space direction="vertical" size="small" style={{ width: '100%' }}>
-                            <Typography.Text type="secondary">Elements</Typography.Text>
-                            <ul style={{ margin: 0, paddingLeft: 18 }}>
-                              {activeViewpoint.allowedElementTypes.map((type) => (
-                                <li key={`el-${type}`}>
-                                  <strong>{type}</strong>: {OBJECT_TYPE_DEFINITIONS[type]?.description ?? 'Element'}
-                                </li>
-                              ))}
-                            </ul>
-
-                            <Typography.Text type="secondary">Relationships</Typography.Text>
-                            <ul style={{ margin: 0, paddingLeft: 18 }}>
-                              {activeViewpoint.allowedRelationshipTypes.map((type) => (
-                                <li key={`rel-${type}`}>
-                                  <strong>{type.replace(/_/g, ' ')}</strong>:{' '}
-                                  {RELATIONSHIP_TYPE_DEFINITIONS[type]?.description ?? 'Relationship'}
-                                </li>
-                              ))}
-                            </ul>
-
-                            <Typography.Text type="secondary">Layout rules</Typography.Text>
-                            <Descriptions size="small" column={1} bordered>
-                              <Descriptions.Item label="Diagram Type">
-                                {activeViewpoint.name}
-                              </Descriptions.Item>
-                              <Descriptions.Item label="Layout engine">
-                                {activeViewpoint.defaultLayout}
-                              </Descriptions.Item>
-                              <Descriptions.Item label="Grammar">
-                                {activeViewpoint.description}
-                              </Descriptions.Item>
-                            </Descriptions>
-                          </Space>
-                        ) : (
-                          <Empty description="No viewpoint selected" />
-                        ),
-                      },
-                    ]}
-                  />
-                </div>
               </Space>
             </RightPanelController>
           )}
@@ -5940,14 +8026,57 @@ const StudioShell: React.FC<StudioShellProps> = ({
       </Modal>
 
       <Modal
+        open={freeShapeModalOpen}
+        title={(() => {
+          const kind = pendingFreeShapeDraft?.kind;
+          const def = FREE_SHAPE_DEFINITIONS.find((shape) => shape.kind === kind);
+          return def ? `Name ${def.label}` : 'Name shape';
+        })()}
+        okText="Create"
+        cancelText="Cancel"
+        onCancel={() => {
+          setFreeShapeModalOpen(false);
+          setPendingFreeShapeDraft(null);
+          freeShapeForm.resetFields();
+        }}
+        onOk={async () => {
+          if (!pendingFreeShapeDraft) return;
+          try {
+            const values = await freeShapeForm.validateFields();
+            const label = String(values.label || '').trim();
+            if (!label) {
+              message.error('Label is required.');
+              return;
+            }
+            updateFreeShape(pendingFreeShapeDraft.id, { label });
+            setFreeShapeModalOpen(false);
+            setPendingFreeShapeDraft(null);
+            freeShapeForm.resetFields();
+          } catch {
+            // validation handled by Form
+          }
+        }}
+      >
+        <Form form={freeShapeForm} layout="vertical">
+          <Form.Item label="Label" name="label" rules={[{ required: true, message: 'Label is required' }]}>
+            <Input placeholder="Enter label" autoFocus allowClear />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
         open={createModalOpen}
-        title={pendingElementType ? `Confirm ${pendingElementType} creation` : 'Confirm creation'}
+        title={pendingElementType ? `Name new ${pendingElementLabel ?? pendingElementType}` : 'Name new element'}
         okText="Create"
         cancelText="Cancel"
         onCancel={() => {
           setCreateModalOpen(false);
           setPendingElementType(null);
+          setPendingElementVisualKind(null);
           setPlacement(null);
+          setPendingElementNameDraft(null);
+          setPlacementModeActive(false);
+          setToolMode('SELECT');
           form.resetFields();
         }}
         onOk={async () => {
@@ -5960,19 +8089,45 @@ const StudioShell: React.FC<StudioShellProps> = ({
               message.error('Name is required.');
               return;
             }
-
-            setPendingElementDraft({
+            const description = String(values.description || '').trim();
+            const resolvedPlacement = placement ?? (cyRef.current ? getCanvasCenter() : getCanvasCenterPosition());
+            if (!resolvedPlacement) {
+              setPendingElementNameDraft({ type: pendingElementType, name, description, visualKind: pendingElementVisualKind });
+              setCreateModalOpen(false);
+              setToolMode('CREATE_ELEMENT');
+              setPlacementModeActive(true);
+              message.info(`Click the canvas to place "${name}".`);
+              return;
+            }
+            const id = stageElement({
               type: pendingElementType,
               name,
-              description: String(values.description || '').trim(),
-              placement,
+              description,
+              placement: resolvedPlacement,
+              visualKind: pendingElementVisualKind,
             });
-            setAuditPreviewOpen(true);
+            if (!id) return;
+            openPropertiesPanel({ elementId: id, elementType: pendingElementType, dock: 'right', readOnly: false });
+            setCreateModalOpen(false);
+            setPendingElementType(null);
+            setPendingElementVisualKind(null);
+            setPlacement(null);
+            setPendingElementDraft(null);
+            setPendingElementNameDraft(null);
+            form.resetFields();
+            message.success(`${pendingElementType} created in Explorer and placed on canvas.`);
           } catch {
             // validation errors handled by Form
           }
         }}
       >
+        <Alert
+          type="info"
+          showIcon
+          message="Toolbox creates new elements"
+          description="This will create the element in Explorer and place it on the canvas."
+          style={{ marginBottom: 12 }}
+        />
         <Form form={form} layout="vertical">
           <Form.Item label="Name" name="name" rules={[{ required: true, message: 'Name is required' }]}>
             <Input placeholder="Enter name" autoFocus allowClear />
@@ -5991,6 +8146,7 @@ const StudioShell: React.FC<StudioShellProps> = ({
         onCancel={() => {
           setAuditPreviewOpen(false);
           setPendingElementDraft(null);
+          setPendingElementVisualKind(null);
         }}
         onOk={() => {
           if (!pendingElementDraft) return;
@@ -5999,16 +8155,18 @@ const StudioShell: React.FC<StudioShellProps> = ({
             name: pendingElementDraft.name,
             description: pendingElementDraft.description,
             placement: pendingElementDraft.placement,
+            visualKind: pendingElementDraft.visualKind,
           });
           if (!id) return;
 
           setAuditPreviewOpen(false);
           setCreateModalOpen(false);
           setPendingElementType(null);
+          setPendingElementVisualKind(null);
           setPlacement(null);
           setPendingElementDraft(null);
           form.resetFields();
-          message.success(`${pendingElementDraft.type} created in repository.`);
+          message.success(`${pendingElementDraft.type} created in Explorer and placed on canvas.`);
         }}
       >
         <Typography.Text strong>Elements to be created</Typography.Text>
@@ -6025,7 +8183,7 @@ const StudioShell: React.FC<StudioShellProps> = ({
         </ul>
         <Typography.Text strong>Impact summary</Typography.Text>
         <Typography.Paragraph type="secondary" style={{ marginTop: 6 }}>
-          New element will be created in the repository immediately.
+          New element will be created in Explorer and displayed on the canvas.
         </Typography.Paragraph>
       </Modal>
 

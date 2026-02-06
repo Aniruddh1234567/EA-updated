@@ -51,6 +51,8 @@ export default {
         business: true,
         application: true,
         technology: true,
+        implementationMigration: true,
+        governance: true,
       },
 
       config: {

@@ -5,7 +5,13 @@ export type ViewType =
   | 'TechnologyLandscape'
   | 'ImpactView';
 
-export type ArchitectureLayer = 'Business' | 'Application' | 'Technology' | 'CrossLayer';
+export type ArchitectureLayer =
+  | 'Business'
+  | 'Application'
+  | 'Technology'
+  | 'Implementation & Migration'
+  | 'Governance'
+  | 'CrossLayer';
 
 export type LayoutType = 'Force' | 'Layered' | 'Hierarchical' | 'Grid';
 

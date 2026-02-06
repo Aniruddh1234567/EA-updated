@@ -128,7 +128,7 @@ const memSnapshot = () => {
 const buildRequest = (args: Args, runIndex: number, rootId: string, rootType: Args['rootKind']): ImpactAnalysisRequest => {
   const includedRelationshipTypes =
     rootType === 'Programme'
-      ? ['IMPACTS', 'DECOMPOSES_TO', 'REALIZED_BY', 'INTEGRATES_WITH', 'HOSTED_ON']
+      ? ['IMPACTS', 'DECOMPOSES_TO', 'SERVED_BY', 'INTEGRATES_WITH', 'DEPLOYED_ON']
       : ['INTEGRATES_WITH'];
 
   return {

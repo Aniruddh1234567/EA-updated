@@ -195,7 +195,7 @@ export class GovernanceValidationEngine {
         // Deprecated technology must not host active applications
         case '4b8f7a3e-9b6d-4d2b-97e1-3c4a7d9ef52c': {
           for (const rel of relationships) {
-            if (rel.relationshipType !== 'HOSTED_ON') continue;
+            if (rel.relationshipType !== 'DEPLOYED_ON') continue;
             if ((rel.status ?? '').trim() !== 'Approved') continue;
 
             const source = byId.get(normalizeId(rel.sourceElementId)) ?? null;
@@ -212,7 +212,7 @@ export class GovernanceValidationEngine {
               affectedElementId: rel.id,
               affectedElementType: `Relationship:${rel.relationshipType}`,
               severity: rule.severity,
-              message: `Active application is hosted on Deprecated technology: Application "${source.name}" (${source.id}) -> Technology "${target.name}" (${target.id}).`,
+              message: `Active application is deployed on Deprecated technology: Application "${source.name}" (${source.id}) -> Technology "${target.name}" (${target.id}).`,
             });
           }
           break;

@@ -117,7 +117,7 @@ export type CsvRowError = {
 };
 
 // Shared enums from internal domain (redeclared as string unions for spec purposes).
-const ARCHITECTURE_LAYER = ['Strategy', 'Business', 'Application', 'Technology'] as const;
+const ARCHITECTURE_LAYER = ['Business', 'Application', 'Technology', 'Implementation & Migration', 'Governance'] as const;
 const LIFECYCLE_STATUS = ['Planned', 'Active', 'Deprecated', 'Retired'] as const;
 const APPROVAL_STATUS = ['Draft', 'Approved', 'Rejected'] as const;
 
@@ -146,10 +146,17 @@ const RELATIONSHIP_TYPE = [
   'DECOMPOSES_TO',
   'COMPOSED_OF',
   'REALIZED_BY',
+  'REALIZES',
+  'TRIGGERS',
+  'SERVED_BY',
+  'EXPOSES',
+  'PROVIDED_BY',
+  'USED_BY',
+  'USES',
   'INTEGRATES_WITH',
   'DEPENDS_ON',
   'CONSUMES',
-  'HOSTED_ON',
+  'DEPLOYED_ON',
   'IMPACTS',
 ] as const;
 

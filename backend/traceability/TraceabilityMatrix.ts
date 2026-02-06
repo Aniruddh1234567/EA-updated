@@ -110,11 +110,8 @@ export class TraceabilityMatrix {
     else if (cap.elementType !== 'Capability') warnings.push(`Element "${capId}" is not a Capability (got "${cap.elementType}").`);
 
     const capOutgoing = await this.graph.getOutgoingEdges(capId);
-    const decomposes = sortRelationshipsDeterministically(
-      capOutgoing.filter((r) => {
-        const t = (r.relationshipType ?? '').trim();
-        return t === 'DECOMPOSES_TO' || t === 'COMPOSED_OF';
-      }),
+    const realizedBy = sortRelationshipsDeterministically(
+      capOutgoing.filter((r) => (r.relationshipType ?? '').trim() === 'REALIZED_BY'),
     );
 
     const paths: TraceabilityPath[] = [];
@@ -122,17 +119,17 @@ export class TraceabilityMatrix {
     const involved = new Set<string>();
     involved.add(capId);
 
-    if (decomposes.length === 0)
-      warnings.push(`No DECOMPOSES_TO/COMPOSED_OF relationships found for Capability "${capId}".`);
+    if (realizedBy.length === 0)
+      warnings.push(`No REALIZED_BY relationships found for Capability "${capId}".`);
 
-    for (const capToProc of decomposes) {
+    for (const capToProc of realizedBy) {
       const processId = normalizeId(capToProc.targetElementId);
       if (!processId) continue;
       involved.add(processId);
 
       const procOutgoing = await this.graph.getOutgoingEdges(processId);
       const realizes = sortRelationshipsDeterministically(
-        procOutgoing.filter((r) => (r.relationshipType ?? '').trim() === 'REALIZED_BY'),
+        procOutgoing.filter((r) => (r.relationshipType ?? '').trim() === 'SERVED_BY'),
       );
 
       if (realizes.length === 0) {
@@ -155,7 +152,7 @@ export class TraceabilityMatrix {
 
         const appOutgoing = await this.graph.getOutgoingEdges(applicationId);
         const hostedOn = sortRelationshipsDeterministically(
-          appOutgoing.filter((r) => (r.relationshipType ?? '').trim() === 'HOSTED_ON'),
+          appOutgoing.filter((r) => (r.relationshipType ?? '').trim() === 'DEPLOYED_ON'),
         );
 
         if (hostedOn.length === 0) {
@@ -280,7 +277,7 @@ export class TraceabilityMatrix {
       } else if (targetType === 'Application') {
         const appOutgoing = await this.graph.getOutgoingEdges(targetId);
         const hostedOn = sortRelationshipsDeterministically(
-          appOutgoing.filter((r) => (r.relationshipType ?? '').trim() === 'HOSTED_ON'),
+          appOutgoing.filter((r) => (r.relationshipType ?? '').trim() === 'DEPLOYED_ON'),
         );
 
         for (const appToTech of hostedOn) {
@@ -374,7 +371,7 @@ export class TraceabilityMatrix {
       } else if (elementType === 'Application') {
         const appOutgoing = await this.graph.getOutgoingEdges(elementId);
         const hostedOn = sortRelationshipsDeterministically(
-          appOutgoing.filter((r) => (r.relationshipType ?? '').trim() === 'HOSTED_ON'),
+          appOutgoing.filter((r) => (r.relationshipType ?? '').trim() === 'DEPLOYED_ON'),
         );
         for (const appToTech of hostedOn) {
           const techId = normalizeId(appToTech.targetElementId);

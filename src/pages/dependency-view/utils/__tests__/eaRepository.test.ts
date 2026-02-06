@@ -18,8 +18,8 @@ describe('EaRepository metamodel enforcement', () => {
     const ownsOk = repo.addRelationship({ fromId: 'ent-1', toId: 'app-1', type: 'OWNS' });
     expect(ownsOk.ok).toBe(true);
 
-    // HOSTED_ON is Application -> Technology; this should pass
-    const ok = repo.addRelationship({ fromId: 'app-1', toId: 'tech-1', type: 'HOSTED_ON' });
+    // DEPLOYED_ON is Application -> Technology; this should pass
+    const ok = repo.addRelationship({ fromId: 'app-1', toId: 'tech-1', type: 'DEPLOYED_ON' });
     expect(ok.ok).toBe(true);
   });
 });

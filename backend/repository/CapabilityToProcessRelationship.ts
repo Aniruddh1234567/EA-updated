@@ -9,7 +9,7 @@ import type { BaseArchitectureRelationship } from './BaseArchitectureRelationshi
  * - No linkage to applications.
  */
 export type CapabilityToProcessRelationship = BaseArchitectureRelationship & {
-  relationshipType: 'DECOMPOSES_TO';
+  relationshipType: 'REALIZED_BY';
 
   sourceElementType: 'Capability';
   targetElementType: 'BusinessProcess';

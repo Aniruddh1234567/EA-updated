@@ -4,16 +4,16 @@ import type { GovernanceMode } from './repositoryMetadata';
 /**
  * Element Creation Policy
  *
- * RULE: Architecture elements can ONLY be created from the Explorer context menu.
+ * RULE: Architecture elements can ONLY be created from the EA Toolbox.
  *
  * ALLOWED:
- * - Right-click on a collection in Explorer (e.g., Business > Capabilities)
- * - Select "+ Create [ElementType]" from the context menu
- * - Fill in Name (required) and Description (optional)
+ * - Use the EA Toolbox to pick a type
+ * - Click or drag onto the canvas to place the new element
+ * - Explorer reflects the new element automatically (repository-backed)
  *
  * EXPLICITLY BLOCKED:
- * - Creating elements on canvas/diagram (no "draw box", no double-click create)
- * - Creating elements via drag-and-drop onto diagrams
+ * - Creating elements from Explorer context menus
+ * - Creating elements via double-click or keyboard shortcuts
  * - AI-generated element creation on canvas (must be reverted)
  *
  * RATIONALE:
@@ -28,7 +28,7 @@ import type { GovernanceMode } from './repositoryMetadata';
  *   - autounselectify: true (nodes cannot be selected for editing)
  *   - boxSelectionEnabled: false (no box selection)
  *   - No event handlers for element creation (tap, dblclick, etc.)
- * - Only Explorer's createObject() function can create elements
+ * - Only Toolbox-initiated creation can create elements
  * - All elements get: UUID, elementType, createdAt timestamp
  */
 
@@ -36,7 +36,7 @@ import type { GovernanceMode } from './repositoryMetadata';
  * Validates that element creation is coming from an allowed source.
  * This is a runtime guard that can be called before element creation.
  */
-export type ElementCreationSource = 'explorer-context-menu' | 'canvas' | 'ai-agent' | 'unknown';
+export type ElementCreationSource = 'toolbox' | 'explorer-context-menu' | 'canvas' | 'ai-agent' | 'unknown';
 
 export interface ElementCreationGuard {
   ok: boolean;
@@ -89,11 +89,19 @@ export type PermissionChainOutcome =
 
 /**
  * Check if element creation is allowed from the given source.
- * Only 'explorer-context-menu' is allowed.
+ * Only 'toolbox' is allowed.
  */
 export function validateElementCreationSource(source: ElementCreationSource): ElementCreationGuard {
-  if (source === 'explorer-context-menu') {
+  if (source === 'toolbox') {
     return { ok: true, source };
+  }
+
+  if (source === 'explorer-context-menu') {
+    return {
+      ok: false,
+      source,
+      reason: 'Explorer does not create elements. Use the EA Toolbox instead.',
+    };
   }
 
   if (source === 'canvas') {
@@ -123,9 +131,9 @@ export function validateElementCreationSource(source: ElementCreationSource): El
  * Policy constant for documentation and enforcement.
  */
 export const ELEMENT_CREATION_POLICY = {
-  allowedSource: 'explorer-context-menu' as const,
-  blockedSources: ['canvas', 'ai-agent', 'drag-drop', 'double-click'] as const,
-  diagramMode: 'read-only' as const,
+  allowedSource: 'toolbox' as const,
+  blockedSources: ['explorer-context-menu', 'canvas', 'ai-agent', 'drag-drop', 'double-click', 'keyboard'] as const,
+  diagramMode: 'toolbox-create' as const,
   requiredFields: ['id', 'type', 'elementType', 'createdAt', 'name'] as const,
 } as const;
 

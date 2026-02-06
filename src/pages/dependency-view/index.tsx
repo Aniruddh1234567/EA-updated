@@ -465,7 +465,7 @@ const DependencyView: React.FC = () => {
       const relationships = result.mappings.map((m) => ({
         fromId: m.applicationId,
         toId: m.technologyId,
-        type: 'HOSTED_ON' as const,
+        type: 'DEPLOYED_ON' as const,
         attributes: { ...m.attributes },
       }));
 

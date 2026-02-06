@@ -1,7 +1,7 @@
-# Prompt 13 — Explorer Creation Rules
+# Prompt 13 — Explorer Reuse Rules
 
-Explorer “Create” actions must:
+Explorer is for browsing, managing, and reusing existing elements.
 
-- Require explicit user intent.
-- Require explicit element type selection.
-- Never guess the target section based on context.
+- Explorer must not create new elements.
+- Creation happens only in the EA Toolbox.
+- Dragging from Explorer onto the canvas reuses existing elements.

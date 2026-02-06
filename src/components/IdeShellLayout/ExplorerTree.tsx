@@ -837,7 +837,9 @@ const ExplorerTree: React.FC = () => {
     return filtered.map((t) => ({ value: t, label: titleForObjectType(t) }));
   }, [isTypeAllowedByScope, isTypeEnabledByFramework]);
 
-  const openCreateTypePicker = React.useCallback(() => {
+  const openCreateTypePicker = React.useCallback((allowedTypes?: readonly ObjectType[]) => {
+    message.info('Create new elements from the EA Toolbox. Explorer is for browsing and reuse.');
+    return;
     if (isReadOnlyMode) {
       message.warning('Read-only mode: creation is disabled.');
       return;
@@ -846,7 +848,11 @@ const ExplorerTree: React.FC = () => {
       message.warning('No repository loaded. Create a repository first.');
       return;
     }
-    if (creatableTypeOptions.length === 0) {
+    const allowedSet = allowedTypes && allowedTypes.length > 0 ? new Set(allowedTypes) : null;
+    const options = allowedSet
+      ? creatableTypeOptions.filter((opt) => allowedSet.has(opt.value as ObjectType))
+      : creatableTypeOptions;
+    if (options.length === 0) {
       message.warning('No element types are enabled for creation in the current framework/scope.');
       return;
     }
@@ -860,7 +866,7 @@ const ExplorerTree: React.FC = () => {
           <Form.Item label="Element Type" required>
             <Select
               placeholder="Select element type"
-              options={creatableTypeOptions}
+              options={options}
               onChange={(v) => {
                 selectedType = v as ObjectType;
               }}
@@ -881,7 +887,7 @@ const ExplorerTree: React.FC = () => {
         });
       },
     });
-  }, [createObject, creatableTypeOptions, eaRepository]);
+  }, [createObject, creatableTypeOptions, eaRepository, isReadOnlyMode, permissionGuard]);
 
   const [refreshToken, setRefreshToken] = React.useState(0);
   const { openSeedSampleDataModal, isRepoEmpty, hasRepository } = useSeedSampleData();
@@ -2032,6 +2038,8 @@ const ExplorerTree: React.FC = () => {
 
   const createObject = React.useCallback(
     (type: ObjectType) => {
+      message.info('Create new elements from the EA Toolbox. Explorer is for browsing and reuse.');
+      return;
       if (isReadOnlyMode) {
         message.warning('Read-only mode: creation is disabled.');
         return;
@@ -2851,14 +2859,10 @@ const ExplorerTree: React.FC = () => {
             {
               key: 'create',
               icon: <PlusOutlined />,
-              label: isReadOnlyMode ? readOnlyLabel('+ Create Enterprise Root') : '+ Create Enterprise Root',
-              disabled: isReadOnlyMode,
+              label: 'Create in Toolbox',
+              disabled: true,
               onClick: () => {
-                if (isReadOnlyMode) {
-                  message.warning('Read-only mode: creation is disabled.');
-                  return;
-                }
-                createObject('Enterprise');
+                message.info('Create new elements from the EA Toolbox.');
               },
             },
             {
@@ -2870,29 +2874,29 @@ const ExplorerTree: React.FC = () => {
       }
 
       // Collections: Create / Import / Bulk Edit / Refresh
-      const collectionToCreateType: Record<string, ObjectType | undefined> = {
-        'explorer:business:enterprises': 'Enterprise',
-        'explorer:business:capabilities': 'Capability',
-        'explorer:business:business-services': 'BusinessService',
-        'explorer:business:processes': 'BusinessProcess',
-        'explorer:business:departments': 'Department',
-        'explorer:application:applications': 'Application',
-        'explorer:application:application-services': 'ApplicationService',
-        'explorer:application:interfaces': 'Interface',
-        'explorer:technology:nodes': 'Node',
-        'explorer:technology:compute': 'Compute',
-        'explorer:technology:runtime': 'Runtime',
-        'explorer:technology:database': 'Database',
-        'explorer:technology:infrastructure-services': 'Technology',
-        'explorer:implmig:programmes': 'Programme',
-        'explorer:implmig:projects': 'Project',
-        'explorer:governance:principles': 'Principle',
-        'explorer:governance:requirements': 'Requirement',
-        'explorer:governance:standards': 'Standard',
+      const collectionToCreateTypes: Record<string, readonly ObjectType[] | undefined> = {
+        'explorer:business:enterprises': ['Enterprise'],
+        'explorer:business:capabilities': ['Capability', 'CapabilityCategory', 'SubCapability'],
+        'explorer:business:business-services': ['BusinessService'],
+        'explorer:business:processes': ['BusinessProcess'],
+        'explorer:business:departments': ['Department'],
+        'explorer:application:applications': ['Application'],
+        'explorer:application:application-services': ['ApplicationService'],
+        'explorer:application:interfaces': ['Interface'],
+        'explorer:technology:nodes': ['Node'],
+        'explorer:technology:compute': ['Compute'],
+        'explorer:technology:runtime': ['Runtime'],
+        'explorer:technology:database': ['Database'],
+        'explorer:technology:infrastructure-services': ['Technology', 'Storage', 'API', 'MessageBroker', 'IntegrationPlatform', 'CloudService'],
+        'explorer:implmig:programmes': ['Programme'],
+        'explorer:implmig:projects': ['Project'],
+        'explorer:governance:principles': ['Principle'],
+        'explorer:governance:requirements': ['Requirement'],
+        'explorer:governance:standards': ['Standard'],
       };
 
-      const createType = collectionToCreateType[key];
-      if (createType) {
+      const createTypes = collectionToCreateTypes[key];
+      if (createTypes) {
         const canCreateElement = !isReadOnlyMode && hasRepositoryPermission(userRole, 'createElement');
         const canImport = !isReadOnlyMode && hasRepositoryPermission(userRole, 'import');
         const canBulkEdit = !isReadOnlyMode && hasRepositoryPermission(userRole, 'bulkEdit');
@@ -2903,29 +2907,25 @@ const ExplorerTree: React.FC = () => {
           Technology: 'Technologies',
           Programme: 'Programmes',
         };
-        const csvEntity = csvEntityForType[createType];
-        const createLabel = canCreateElement ? '+ Create element…' : readOnlyLabel('+ Create element…');
+        const csvEntity = csvEntityForType[createTypes[0]];
+        const createLabel = 'Create in Toolbox';
         const importLabel = canImport ? 'Import (CSV / Excel)' : readOnlyLabel('Import (CSV / Excel)');
         const bulkLabel = canBulkEdit ? 'Bulk Edit' : readOnlyLabel('Bulk Edit');
 
-        const createDisabled = !canCreateElement || creatableTypeOptions.length === 0;
+        const createDisabled = true;
         const importDisabled = !canImport;
         const bulkDisabled = !canBulkEdit;
 
         const items = [
-          {
-            key: 'create',
-            icon: <PlusOutlined />,
-            label: createLabel,
-            disabled: createDisabled,
-            onClick: () => {
-              if (!canCreateElement) {
-                permissionGuard('createElement');
-                return;
-              }
-              openCreateTypePicker();
+            {
+              key: 'create',
+              icon: <PlusOutlined />,
+              label: createLabel,
+              disabled: createDisabled,
+              onClick: () => {
+                message.info('Create new elements from the EA Toolbox.');
+              },
             },
-          },
           {
             key: 'import',
             label: importLabel,
@@ -3264,6 +3264,9 @@ const ExplorerTree: React.FC = () => {
           Read-only mode: navigation only. Create, rename, and delete actions are disabled.
         </Typography.Text>
       ) : null}
+      <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>
+        Create new elements from the EA Toolbox. Drag elements from Explorer to reuse them on the canvas.
+      </Typography.Text>
       <Tree
         virtual
         height={treeHeight}
@@ -3283,10 +3286,22 @@ const ExplorerTree: React.FC = () => {
         titleRender={(node) => {
           const k = typeof node.key === 'string' ? node.key : '';
           const isPathAncestor = typeof node.key === 'string' && activePathAncestors.has(node.key);
-          const data = (node as any)?.data as { elementId?: string } | undefined;
+          const data = (node as any)?.data as { elementId?: string; elementType?: string } | undefined;
           const obj = data?.elementId ? eaRepository?.objects.get(data.elementId) : undefined;
           const modelingState = modelingStateForObject(obj ?? null);
           const frameworkTags = frameworksForObject(obj);
+          const canDrag = Boolean((node as any)?.data?.elementId && (node as any)?.data?.elementType);
+          const handleDragStart = (event: React.DragEvent<HTMLSpanElement>) => {
+            if (!canDrag) return;
+            const dragData = (node as any)?.data as { elementId?: string; elementType?: string } | undefined;
+            if (!dragData?.elementId || !dragData?.elementType) return;
+            event.stopPropagation();
+            event.dataTransfer.setData('application/x-ea-element-id', dragData.elementId);
+            event.dataTransfer.setData('application/x-ea-element-type', dragData.elementType);
+            event.dataTransfer.setData('text/plain', dragData.elementId);
+            event.dataTransfer.effectAllowed = 'copy';
+            event.dataTransfer.dropEffect = 'copy';
+          };
           const stateTag = modelingState ? (
             <Tag key={`state-${modelingState}`} color={MODELING_STATE_TAGS[modelingState].color}>
               {MODELING_STATE_TAGS[modelingState].label}
@@ -3294,7 +3309,12 @@ const ExplorerTree: React.FC = () => {
           ) : null;
           return (
             <Dropdown trigger={['contextMenu']} menu={menuForKey(k)}>
-              <span className={isPathAncestor ? styles.pathActive : undefined}>
+              <span
+                className={isPathAncestor ? styles.pathActive : undefined}
+                draggable={canDrag}
+                onDragStart={handleDragStart}
+                title={canDrag ? 'Drag to canvas to reuse this element' : undefined}
+              >
                 {stateTag || frameworkTags.length > 0 ? (
                   <Space size={6}>
                     <span>{node.title as any}</span>

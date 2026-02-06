@@ -13,6 +13,8 @@ export type ArchitectureLayersInScope = {
   business: boolean;
   application: boolean;
   technology: boolean;
+  implementationMigration: boolean;
+  governance: boolean;
 };
 
 /**

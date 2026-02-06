@@ -65,7 +65,11 @@ const defaults: GeneratorOptions = {
   programmeImpactsPerProgramme: 60,
 };
 
-const baseElement = (id: string, name: string, layer: 'Strategy' | 'Business' | 'Application' | 'Technology') => {
+const baseElement = (
+  id: string,
+  name: string,
+  layer: 'Business' | 'Application' | 'Technology' | 'Implementation & Migration' | 'Governance',
+) => {
   const ts = nowIso();
   return {
     id,
@@ -142,7 +146,7 @@ export const generateSyntheticDataset = (overrides?: Partial<GeneratorOptions>):
   for (let i = 0; i < opts.programmes; i += 1) {
     const id = `prog-${i + 1}-${uuid()}`;
     const p: Programme = {
-      ...baseElement(id, `Programme ${i + 1}`, 'Strategy'),
+      ...baseElement(id, `Programme ${i + 1}`, 'Implementation & Migration'),
       elementType: 'Programme',
       programmeType: pick(['Transformation', 'Compliance', 'Modernization'] as const, rng.nextInt(3)),
       strategicObjective: 'Synthetic objective',
@@ -301,14 +305,14 @@ export const generateSyntheticDataset = (overrides?: Partial<GeneratorOptions>):
     );
   }
 
-  // REALIZED_BY: BusinessProcess -> Application
+  // SERVED_BY: BusinessProcess -> Application
   for (const procId of processIds) {
     if (!appIds.length) break;
     const targetAppId = rng.pick(appIds);
     addRel(
       relationshipBase({
         id: `rel-real-${uuid()}`,
-        relationshipType: 'REALIZED_BY',
+        relationshipType: 'SERVED_BY',
         sourceElementId: procId,
         sourceElementType: 'BusinessProcess',
         targetElementId: targetAppId,
@@ -317,14 +321,14 @@ export const generateSyntheticDataset = (overrides?: Partial<GeneratorOptions>):
     );
   }
 
-  // HOSTED_ON: Application -> Technology
+  // DEPLOYED_ON: Application -> Technology
   for (const appId of appIds) {
     if (!techIds.length) break;
     const techId = rng.pick(techIds);
     addRel(
       relationshipBase({
         id: `rel-host-${uuid()}`,
-        relationshipType: 'HOSTED_ON',
+        relationshipType: 'DEPLOYED_ON',
         sourceElementId: appId,
         sourceElementType: 'Application',
         targetElementId: techId,

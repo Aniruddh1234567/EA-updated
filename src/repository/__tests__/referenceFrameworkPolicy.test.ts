@@ -13,10 +13,17 @@ describe('referenceFrameworkPolicy', () => {
     expect(isRelationshipTypeAllowedForReferenceFramework('ArchiMate', 'DECOMPOSES_TO')).toBe(true);
     expect(isRelationshipTypeAllowedForReferenceFramework('ArchiMate', 'COMPOSED_OF')).toBe(true);
     expect(isRelationshipTypeAllowedForReferenceFramework('ArchiMate', 'REALIZES')).toBe(true);
+    expect(isRelationshipTypeAllowedForReferenceFramework('ArchiMate', 'REALIZED_BY')).toBe(true);
+    expect(isRelationshipTypeAllowedForReferenceFramework('ArchiMate', 'TRIGGERS')).toBe(true);
+    expect(isRelationshipTypeAllowedForReferenceFramework('ArchiMate', 'SERVED_BY')).toBe(true);
+    expect(isRelationshipTypeAllowedForReferenceFramework('ArchiMate', 'USES')).toBe(true);
+    expect(isRelationshipTypeAllowedForReferenceFramework('ArchiMate', 'EXPOSES')).toBe(true);
+    expect(isRelationshipTypeAllowedForReferenceFramework('ArchiMate', 'PROVIDED_BY')).toBe(true);
+    expect(isRelationshipTypeAllowedForReferenceFramework('ArchiMate', 'USED_BY')).toBe(true);
     expect(isRelationshipTypeAllowedForReferenceFramework('ArchiMate', 'INTEGRATES_WITH')).toBe(true);
     expect(isRelationshipTypeAllowedForReferenceFramework('ArchiMate', 'DEPENDS_ON')).toBe(false);
     expect(isRelationshipTypeAllowedForReferenceFramework('ArchiMate', 'CONSUMES')).toBe(true);
-    expect(isRelationshipTypeAllowedForReferenceFramework('ArchiMate', 'HOSTED_ON')).toBe(true);
+    expect(isRelationshipTypeAllowedForReferenceFramework('ArchiMate', 'DEPLOYED_ON')).toBe(true);
     expect(isRelationshipTypeAllowedForReferenceFramework('ArchiMate', 'IMPACTS')).toBe(true);
 
     // Non-standard/internal governance relationships should be blocked.

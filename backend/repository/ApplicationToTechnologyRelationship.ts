@@ -7,7 +7,7 @@ export type HostingEnvironment = 'Prod' | 'Non-Prod';
 export type ResilienceLevel = 'High' | 'Medium' | 'Low';
 
 /**
- * Application → Technology hosting relationship.
+ * Application → Technology deployment relationship.
  *
  * Semantics:
  * - Typed, directional, auditable relationship for application-to-infrastructure traceability.
@@ -16,7 +16,7 @@ export type ResilienceLevel = 'High' | 'Medium' | 'Low';
  * - No deployment scripts or execution semantics are implied.
  */
 export type ApplicationToTechnologyRelationship = BaseArchitectureRelationship & {
-  relationshipType: 'HOSTED_ON';
+  relationshipType: 'DEPLOYED_ON';
 
   sourceElementType: 'Application';
   targetElementType: 'Technology';

@@ -134,11 +134,11 @@ export function parseAndValidateApplicationTechnologyCsv(csvText: string): Appli
     if (!rawAppId) errors.push(`Row ${displayRow}: applicationId is required.`);
     if (!rawTechId) errors.push(`Row ${displayRow}: technologyId is required.`);
 
-    // Mapping rule: application -> technology always uses HOSTED_ON.
-    const relationshipType: RelationshipType = 'HOSTED_ON';
-    if (rawRelType && rawRelType !== 'HOSTED_ON') {
+    // Mapping rule: application -> technology uses DEPLOYED_ON.
+    const relationshipType: RelationshipType = 'DEPLOYED_ON';
+    if (rawRelType && rawRelType !== 'DEPLOYED_ON') {
       errors.push(
-        `Row ${displayRow}: relationshipType must be HOSTED_ON for Application–Technology mappings (got "${rawRelType}").`,
+        `Row ${displayRow}: relationshipType must be DEPLOYED_ON for Application–Technology mappings (got "${rawRelType}").`,
       );
     }
 
@@ -149,7 +149,7 @@ export function parseAndValidateApplicationTechnologyCsv(csvText: string): Appli
       if (value !== '') attributes[col] = value;
     }
 
-    if (rawAppId && rawTechId && (!rawRelType || rawRelType === 'HOSTED_ON')) {
+    if (rawAppId && rawTechId && (!rawRelType || rawRelType === 'DEPLOYED_ON')) {
       mappings.push({
         applicationId: rawAppId,
         technologyId: rawTechId,

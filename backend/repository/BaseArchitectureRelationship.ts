@@ -16,7 +16,7 @@ export type ConfidenceLevel = 'High' | 'Medium' | 'Low';
 export type BaseArchitectureRelationship = {
   // Identity
   readonly id: string;
-  /** Relationship classification (e.g. REALIZES, DEPENDS_ON, HOSTED_ON) */
+  /** Relationship classification (e.g. REALIZES, DEPENDS_ON, DEPLOYED_ON) */
   relationshipType: string;
 
   // Endpoints

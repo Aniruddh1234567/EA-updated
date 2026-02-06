@@ -16,22 +16,31 @@ const hasErrors = <T extends { severity: string }>(findings: readonly T[]): bool
 
 const formatCount = (n: number, unit: string): string => `${n} ${unit}${n === 1 ? '' : 's'}`;
 
-type Layer = 'Strategy' | 'Business' | 'Application' | 'Technology' | 'Unknown';
+type Layer = 'Business' | 'Application' | 'Technology' | 'Implementation & Migration' | 'Governance' | 'Unknown';
 
 const elementLayer = (element: BaseArchitectureElement | null): Layer => {
   if (!element) return 'Unknown';
   if (typeof (element as any).layer === 'string') {
     const layer = String((element as any).layer).trim();
-    if (layer === 'Strategy' || layer === 'Business' || layer === 'Application' || layer === 'Technology') return layer;
+    if (
+      layer === 'Business' ||
+      layer === 'Application' ||
+      layer === 'Technology' ||
+      layer === 'Implementation & Migration' ||
+      layer === 'Governance'
+    )
+      return layer;
   }
 
   // Fallback by elementType.
   switch (element.elementType) {
     case 'Programme':
     case 'Project':
+      return 'Implementation & Migration';
     case 'Principle':
     case 'Requirement':
-      return 'Strategy';
+    case 'Standard':
+      return 'Governance';
     case 'Enterprise':
     case 'Department':
     case 'Capability':
@@ -87,29 +96,29 @@ const collectRequiredRelationshipViolations = (
     }
   }
 
-  // ApplicationService must belong to exactly 1 Application (PROVIDES Application -> ApplicationService).
+  // ApplicationService must belong to exactly 1 Application (PROVIDED_BY ApplicationService -> Application).
   for (const svc of elements.getElementsByType('applicationServices')) {
     const rels = relsByElement.get(svc.id) ?? [];
-    const providesIncoming = rels.filter(
-      (r) => r.relationshipType === 'PROVIDES' && r.targetElementId === svc.id && r.targetElementType === 'ApplicationService',
+    const providesOutgoing = rels.filter(
+      (r) => r.relationshipType === 'PROVIDED_BY' && r.sourceElementId === svc.id && r.sourceElementType === 'ApplicationService',
     );
 
-    if (providesIncoming.length !== 1) {
+    if (providesOutgoing.length !== 1) {
       violations.push(
-        `ApplicationService "${svc.name}" (${svc.id}) must belong to exactly one Application (found ${providesIncoming.length}).`,
+        `ApplicationService "${svc.name}" (${svc.id}) must belong to exactly one Application (found ${providesOutgoing.length}).`,
       );
     }
   }
 
-  // Application must be hosted on ≥1 Technology (HOSTED_ON Application -> Technology).
+  // Application must be deployed on ≥1 Technology (DEPLOYED_ON Application -> Technology).
   for (const app of elements.getElementsByType('applications')) {
     const rels = relsByElement.get(app.id) ?? [];
     const hosted = rels.some(
-      (r) => r.relationshipType === 'HOSTED_ON' && r.sourceElementId === app.id && r.targetElementType === 'Technology',
+      (r) => r.relationshipType === 'DEPLOYED_ON' && r.sourceElementId === app.id && r.targetElementType === 'Technology',
     );
 
     if (!hosted) {
-      violations.push(`Application "${app.name}" (${app.id}) must be hosted on at least one Technology.`);
+      violations.push(`Application "${app.name}" (${app.id}) must be deployed on at least one Technology.`);
     }
   }
 
@@ -207,15 +216,15 @@ const collectOrphanViolations = (
     }
   }
 
-  // Technology with no Applications (HOSTED_ON Application -> Technology).
+  // Technology with no Applications (DEPLOYED_ON Application -> Technology).
   for (const tech of elements.getElementsByType('technologies')) {
     const rels = relsByElement.get(tech.id) ?? [];
     const hasApp = rels.some(
-      (r) => r.relationshipType === 'HOSTED_ON' && r.targetElementId === tech.id && r.sourceElementType === 'Application',
+      (r) => r.relationshipType === 'DEPLOYED_ON' && r.targetElementId === tech.id && r.sourceElementType === 'Application',
     );
 
     if (!hasApp) {
-      violations.push(`Technology "${tech.name}" (${tech.id}) is orphaned: no hosting Application.`);
+      violations.push(`Technology "${tech.name}" (${tech.id}) is orphaned: no deployed Application.`);
     }
   }
 

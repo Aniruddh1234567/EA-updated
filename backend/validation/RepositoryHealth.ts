@@ -34,16 +34,27 @@ const byId = (relationships: RelationshipRepository): Map<string, BaseArchitectu
   return map;
 };
 
-const elementLayer = (element: BaseArchitectureElement | null): 'Strategy' | 'Business' | 'Application' | 'Technology' | 'Unknown' => {
+const elementLayer = (
+  element: BaseArchitectureElement | null,
+): 'Business' | 'Application' | 'Technology' | 'Implementation & Migration' | 'Governance' | 'Unknown' => {
   if (!element) return 'Unknown';
   const layer = typeof (element as any).layer === 'string' ? String((element as any).layer).trim() : '';
-  if (layer === 'Strategy' || layer === 'Business' || layer === 'Application' || layer === 'Technology') return layer;
+  if (
+    layer === 'Business' ||
+    layer === 'Application' ||
+    layer === 'Technology' ||
+    layer === 'Implementation & Migration' ||
+    layer === 'Governance'
+  )
+    return layer;
   switch (element.elementType) {
     case 'Programme':
     case 'Project':
+      return 'Implementation & Migration';
     case 'Principle':
     case 'Requirement':
-      return 'Strategy';
+    case 'Standard':
+      return 'Governance';
     case 'Enterprise':
     case 'Department':
     case 'Capability':
@@ -91,13 +102,13 @@ const collectRequiredRelationshipFindings = (
 
   for (const svc of elements.getElementsByType('applicationServices')) {
     const rels = relsByElement.get(svc.id) ?? [];
-    const providesIncoming = rels.filter(
-      (r) => r.relationshipType === 'PROVIDES' && r.targetElementId === svc.id && r.targetElementType === 'ApplicationService',
+    const providesOutgoing = rels.filter(
+      (r) => r.relationshipType === 'PROVIDED_BY' && r.sourceElementId === svc.id && r.sourceElementType === 'ApplicationService',
     );
-    if (providesIncoming.length !== 1) {
+    if (providesOutgoing.length !== 1) {
       findings.push({
         severity: 'Error',
-        message: `ApplicationService "${svc.name}" (${svc.id}) must belong to exactly one Application (found ${providesIncoming.length}).`,
+        message: `ApplicationService "${svc.name}" (${svc.id}) must belong to exactly one Application (found ${providesOutgoing.length}).`,
         subjectId: svc.id,
         subjectType: svc.elementType,
       });
@@ -107,12 +118,12 @@ const collectRequiredRelationshipFindings = (
   for (const app of elements.getElementsByType('applications')) {
     const rels = relsByElement.get(app.id) ?? [];
     const hosted = rels.some(
-      (r) => r.relationshipType === 'HOSTED_ON' && r.sourceElementId === app.id && r.targetElementType === 'Technology',
+      (r) => r.relationshipType === 'DEPLOYED_ON' && r.sourceElementId === app.id && r.targetElementType === 'Technology',
     );
     if (!hosted) {
       findings.push({
         severity: 'Error',
-        message: `Application "${app.name}" (${app.id}) must be hosted on at least one Technology.`,
+        message: `Application "${app.name}" (${app.id}) must be deployed on at least one Technology.`,
         subjectId: app.id,
         subjectType: app.elementType,
       });
@@ -185,12 +196,12 @@ const collectOrphanFindings = (
   for (const tech of elements.getElementsByType('technologies')) {
     const rels = relsByElement.get(tech.id) ?? [];
     const hasApp = rels.some(
-      (r) => r.relationshipType === 'HOSTED_ON' && r.targetElementId === tech.id && r.sourceElementType === 'Application',
+      (r) => r.relationshipType === 'DEPLOYED_ON' && r.targetElementId === tech.id && r.sourceElementType === 'Application',
     );
     if (!hasApp) {
       findings.push({
         severity: 'Error',
-        message: `Technology "${tech.name}" (${tech.id}) is orphaned: no hosting Application.`,
+        message: `Technology "${tech.name}" (${tech.id}) is orphaned: no deployed Application.`,
         subjectId: tech.id,
         subjectType: tech.elementType,
       });

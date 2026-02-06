@@ -14,7 +14,7 @@ export type ExportScope = {
   /** Explicit element types to include (e.g. ["Application", "Capability"]). */
   includedElementTypes: readonly string[];
 
-  /** Explicit relationship types to include (e.g. ["DEPENDS_ON", "HOSTED_ON"]). */
+  /** Explicit relationship types to include (e.g. ["DEPENDS_ON", "DEPLOYED_ON"]). */
   includedRelationshipTypes: readonly string[];
 
   /** Whether to include view definitions. */

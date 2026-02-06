@@ -90,9 +90,9 @@ const viewTypeRules: Record<
   }
 > = {
   CapabilityMap: {
-    // Enterprise-grade business traceability: Capability → BusinessService → ApplicationService → Application.
-    allowedElementTypes: ['Capability', 'BusinessService', 'ApplicationService', 'Application'],
-    allowedRelationshipTypes: ['DECOMPOSES_TO', 'COMPOSED_OF', 'REALIZED_BY', 'SUPPORTS', 'SUPPORTED_BY'],
+    // Business traceability: Capability → BusinessProcess (REALIZED_BY).
+    allowedElementTypes: ['Capability', 'BusinessProcess'],
+    allowedRelationshipTypes: ['DECOMPOSES_TO', 'COMPOSED_OF', 'REALIZED_BY'],
   },
   ApplicationDependency: {
     allowedElementTypes: ['Application'],

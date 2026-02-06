@@ -182,11 +182,11 @@ const fieldTypeOk = (field: CsvFieldSpec, value: unknown): boolean => {
 const requiredRelationshipFieldsByType: Record<string, readonly CsvColumnName[]> = {
   DECOMPOSES_TO: [],
   COMPOSED_OF: [],
-  REALIZED_BY: ['automationLevel'],
+  SERVED_BY: ['automationLevel'],
   INTEGRATES_WITH: ['dependencyType', 'dependencyStrength', 'runtimeCritical'],
   DEPENDS_ON: ['dependencyType', 'dependencyStrength', 'runtimeCritical'],
   CONSUMES: ['dependencyType', 'dependencyStrength', 'runtimeCritical'],
-  HOSTED_ON: ['hostingRole', 'environment', 'resilienceLevel'],
+  DEPLOYED_ON: ['hostingRole', 'environment', 'resilienceLevel'],
   IMPACTS: ['impactType', 'expectedChangeMagnitude'],
 };
 

@@ -95,8 +95,15 @@ const ViewDefinitionTab: React.FC<ViewDefinitionTabProps> = ({ viewId }) => {
   const [lifecycleFilter, setLifecycleFilter] = React.useState<LifecycleFilter>('Both');
   const [relationshipFilters, setRelationshipFilters] = React.useState<Record<string, boolean>>({
     SUPPORTED_BY: true,
+    REALIZED_BY: true,
     REALIZES: true,
-    HOSTED_ON: true,
+    TRIGGERS: true,
+    SERVED_BY: true,
+    EXPOSES: true,
+    PROVIDED_BY: true,
+    USED_BY: true,
+    USES: true,
+    DEPLOYED_ON: true,
     IMPACTS: true,
   });
 
@@ -115,8 +122,15 @@ const ViewDefinitionTab: React.FC<ViewDefinitionTabProps> = ({ viewId }) => {
     setLifecycleFilter('Both');
     setRelationshipFilters({
       SUPPORTED_BY: true,
+      REALIZED_BY: true,
       REALIZES: true,
-      HOSTED_ON: true,
+      TRIGGERS: true,
+      SERVED_BY: true,
+      EXPOSES: true,
+      PROVIDED_BY: true,
+      USED_BY: true,
+      USES: true,
+      DEPLOYED_ON: true,
       IMPACTS: true,
     });
   }, []);
@@ -623,16 +637,58 @@ const ViewDefinitionTab: React.FC<ViewDefinitionTabProps> = ({ viewId }) => {
                     SUPPORTED_BY
                   </Checkbox>
                   <Checkbox
+                    checked={relationshipFilters.REALIZED_BY}
+                    onChange={(e) => setRelationshipFilters((prev) => ({ ...prev, REALIZED_BY: e.target.checked }))}
+                  >
+                    REALIZED_BY
+                  </Checkbox>
+                  <Checkbox
                     checked={relationshipFilters.REALIZES}
                     onChange={(e) => setRelationshipFilters((prev) => ({ ...prev, REALIZES: e.target.checked }))}
                   >
                     REALIZES
                   </Checkbox>
                   <Checkbox
-                    checked={relationshipFilters.HOSTED_ON}
-                    onChange={(e) => setRelationshipFilters((prev) => ({ ...prev, HOSTED_ON: e.target.checked }))}
+                    checked={relationshipFilters.TRIGGERS}
+                    onChange={(e) => setRelationshipFilters((prev) => ({ ...prev, TRIGGERS: e.target.checked }))}
                   >
-                    HOSTED_ON
+                    TRIGGERS
+                  </Checkbox>
+                  <Checkbox
+                    checked={relationshipFilters.SERVED_BY}
+                    onChange={(e) => setRelationshipFilters((prev) => ({ ...prev, SERVED_BY: e.target.checked }))}
+                  >
+                    SERVED_BY
+                  </Checkbox>
+                  <Checkbox
+                    checked={relationshipFilters.EXPOSES}
+                    onChange={(e) => setRelationshipFilters((prev) => ({ ...prev, EXPOSES: e.target.checked }))}
+                  >
+                    EXPOSES
+                  </Checkbox>
+                  <Checkbox
+                    checked={relationshipFilters.PROVIDED_BY}
+                    onChange={(e) => setRelationshipFilters((prev) => ({ ...prev, PROVIDED_BY: e.target.checked }))}
+                  >
+                    PROVIDED_BY
+                  </Checkbox>
+                  <Checkbox
+                    checked={relationshipFilters.USED_BY}
+                    onChange={(e) => setRelationshipFilters((prev) => ({ ...prev, USED_BY: e.target.checked }))}
+                  >
+                    USED_BY
+                  </Checkbox>
+                  <Checkbox
+                    checked={relationshipFilters.USES}
+                    onChange={(e) => setRelationshipFilters((prev) => ({ ...prev, USES: e.target.checked }))}
+                  >
+                    USES
+                  </Checkbox>
+                  <Checkbox
+                    checked={relationshipFilters.DEPLOYED_ON}
+                    onChange={(e) => setRelationshipFilters((prev) => ({ ...prev, DEPLOYED_ON: e.target.checked }))}
+                  >
+                    DEPLOYED_ON
                   </Checkbox>
                   <Checkbox
                     checked={relationshipFilters.IMPACTS}

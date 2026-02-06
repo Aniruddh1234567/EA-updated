@@ -26,17 +26,26 @@ const ARCHIMATE_RELATIONSHIPS: readonly string[] = [
   'DECOMPOSES_TO',
   'COMPOSED_OF',
 
-  // Cross-layer enablement
+  // Business process realization and flow
   'REALIZES',
+  'REALIZED_BY',
+  'TRIGGERS',
+  'SERVED_BY',
 
   // Application-to-application dependency/integration (maps best-fit to ArchiMate Association)
   'INTEGRATES_WITH',
+  'USES',
 
   // Application-service-to-application-service dependency (maps best-fit to ArchiMate Association)
   'CONSUMES',
 
-  // Application deployment/hosting traceability
-  'HOSTED_ON',
+  // Application service exposure
+  'EXPOSES',
+  'PROVIDED_BY',
+  'USED_BY',
+
+  // Application deployment traceability
+  'DEPLOYED_ON',
 
   // Cross-layer enablement
   'SUPPORTED_BY',
@@ -54,8 +63,27 @@ const TOGAF_OBJECT_TYPES: readonly ObjectType[] = [
   'Capability',
   'SubCapability',
   'ValueStream',
+  'BusinessService',
+  'BusinessProcess',
+  'Department',
   'Application',
+  'ApplicationService',
+  'Interface',
   'Technology',
+  'Node',
+  'Server',
+  'Compute',
+  'VM',
+  'Container',
+  'Runtime',
+  'Database',
+  'Storage',
+  'Network',
+  'LoadBalancer',
+  'API',
+  'MessageBroker',
+  'IntegrationPlatform',
+  'CloudService',
 ] as const;
 
 const TOGAF_ADM_PHASES: readonly string[] = [

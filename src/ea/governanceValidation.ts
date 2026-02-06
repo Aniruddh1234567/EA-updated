@@ -55,6 +55,118 @@ const getString = (value: unknown): string => (typeof value === 'string' ? value
 const getNumber = (value: unknown): number => (typeof value === 'number' && Number.isFinite(value) ? value : 0);
 const getBool = (value: unknown): boolean => value === true;
 
+const TECHNICAL_TERMS = [
+  'api',
+  'application',
+  'app',
+  'database',
+  'server',
+  'cloud',
+  'platform',
+  'infrastructure',
+  'network',
+  'system',
+  'software',
+  'hardware',
+  'integration',
+  'interface',
+  'runtime',
+  'compute',
+  'storage',
+  'message',
+  'broker',
+  'queue',
+  'pipeline',
+  'middleware',
+  'technology',
+  'tech',
+];
+
+const PHYSICAL_TERMS = [
+  'server',
+  'database',
+  'db',
+  'host',
+  'node',
+  'vm',
+  'virtual machine',
+  'cluster',
+  'container',
+  'kubernetes',
+  'k8s',
+  'docker',
+  'runtime',
+  'compute',
+  'storage',
+  'network',
+  'router',
+  'switch',
+  'firewall',
+  'load balancer',
+  'gateway',
+  'infra',
+  'infrastructure',
+];
+
+const findTechnicalTerm = (text: string): string | null => {
+  const normalized = String(text ?? '').toLowerCase();
+  if (!normalized.trim()) return null;
+  for (const term of TECHNICAL_TERMS) {
+    const pattern = new RegExp(`\\b${term.replace(/[-/\\^$*+?.()|[\\]{}]/g, '\\$&')}\\b`, 'i');
+    if (pattern.test(normalized)) return term;
+  }
+  return null;
+};
+
+const findPhysicalTerm = (text: string): string | null => {
+  const normalized = String(text ?? '').toLowerCase();
+  if (!normalized.trim()) return null;
+  for (const term of PHYSICAL_TERMS) {
+    const pattern = new RegExp(`\\b${term.replace(/[-/\\^$*+?.()|[\\]{}]/g, '\\$&')}\\b`, 'i');
+    if (pattern.test(normalized)) return term;
+  }
+  return null;
+};
+
+const isItOwned = (value: unknown): boolean => {
+  if (typeof value !== 'string') return false;
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) return false;
+  return /\b(it|information technology)\b/i.test(normalized);
+};
+
+const PROCESS_VERBS = [
+  'Place',
+  'Process',
+  'Approve',
+  'Validate',
+  'Verify',
+  'Assess',
+  'Review',
+  'Fulfill',
+  'Manage',
+  'Handle',
+  'Create',
+  'Update',
+  'Resolve',
+  'Reconcile',
+  'Notify',
+  'Onboard',
+  'Register',
+  'Close',
+  'Issue',
+  'Capture',
+  'Monitor',
+  'Deliver',
+];
+
+const isVerbBasedProcessName = (name: string): boolean => {
+  const trimmed = String(name ?? '').trim();
+  if (!trimmed) return false;
+  const first = trimmed.split(/\s+/)[0];
+  return PROCESS_VERBS.some((verb) => verb.toLowerCase() === first.toLowerCase());
+};
+
 const normalizeId = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
 
 const isSoftDeleted = (attrs: Record<string, unknown> | null | undefined) => (attrs as any)?._deleted === true;
@@ -440,7 +552,7 @@ export function buildGovernanceDebt(
         name,
         description: getString(attrs.description),
         elementType: 'Programme',
-        layer: 'Strategy',
+        layer: 'Implementation & Migration',
         lifecycleStatus: (attrs.lifecycleStatus as any) || 'Active',
         lifecycleStartDate: getString(attrs.lifecycleStartDate),
         lifecycleEndDate: getString(attrs.lifecycleEndDate) || undefined,
@@ -473,7 +585,7 @@ export function buildGovernanceDebt(
         name,
         description: getString(attrs.description),
         elementType: 'Project',
-        layer: 'Strategy',
+        layer: 'Implementation & Migration',
         lifecycleStatus: (attrs.lifecycleStatus as any) || 'Active',
         lifecycleStartDate: getString(attrs.lifecycleStartDate),
         lifecycleEndDate: getString(attrs.lifecycleEndDate) || undefined,
@@ -769,59 +881,40 @@ export function buildGovernanceDebt(
     }
   }
 
-  // 3) Business Service must map to at least one Capability.
-  for (const svc of activeObjects.filter((o) => o.type === 'BusinessService')) {
-    const mappedCaps = eaRelationships.filter((r) => {
-      if (r.type !== 'REALIZED_BY') return false;
-      if (normalizeId(r.toId) !== svc.id) return false;
-      const endpoints = activeRelEndpoints(r);
-      return endpoints?.from.type === 'Capability' || endpoints?.from.type === 'SubCapability';
-    });
-
-    if (mappedCaps.length === 0) {
+  // 3) Business Capability rules: no technical terms, not owned by IT, stable lifecycle.
+  for (const cap of activeObjects.filter((o) => o.type === 'Capability')) {
+    const attrs = cap.attributes ?? {};
+    const name = getString(attrs.name) || cap.id;
+    const description = getString(attrs.description);
+    const offending = findTechnicalTerm(`${name} ${description}`);
+    if (offending) {
       addRepoFinding({
-        checkId: 'EA_BUSINESS_SERVICE_REQUIRES_CAPABILITY',
+        checkId: 'EA_CAPABILITY_NO_TECH_TERMS',
         severity: 'Error',
-        message: `BusinessService ‘${displayName(svc)}’ must be linked to at least one Capability via REALIZED_BY.`,
-        elementId: svc.id,
-        elementType: svc.type,
-        collection: 'businessServices',
+        message: `Capability ‘${displayName(cap)}’ contains technical term “${offending}”.`,
+        elementId: cap.id,
+        elementType: cap.type,
+        collection: 'capabilities',
       });
     }
-  }
 
-  // 3b) Capability must be supported by at least one ApplicationService.
-  // We currently model this indirectly:
-  //   Capability --REALIZED_BY--> BusinessService --SUPPORTED_BY--> ApplicationService
-  // This keeps Capability->ApplicationService out of the core metamodel while still enforcing traceability.
-  for (const cap of activeObjects.filter((o) => o.type === 'Capability')) {
-    const realizedBusinessServiceIds = new Set<string>();
-    for (const r of eaRelationships) {
-      if (r.type !== 'REALIZED_BY') continue;
-      if (normalizeId(r.fromId) !== cap.id) continue;
-      const endpoints = activeRelEndpoints(r);
-      if (!endpoints) continue;
-      if (endpoints.to.type !== 'BusinessService') continue;
-      realizedBusinessServiceIds.add(endpoints.to.id);
-    }
-
-    const supportingAppServiceIds = new Set<string>();
-    for (const svcId of realizedBusinessServiceIds) {
-      for (const r of eaRelationships) {
-        if (r.type !== 'SUPPORTED_BY') continue;
-        if (normalizeId(r.fromId) !== svcId) continue;
-        const endpoints = activeRelEndpoints(r);
-        if (!endpoints) continue;
-        if (endpoints.to.type !== 'ApplicationService') continue;
-        supportingAppServiceIds.add(endpoints.to.id);
-      }
-    }
-
-    if (supportingAppServiceIds.size === 0) {
+    if (isItOwned((attrs as any)?.ownerRole) || isItOwned((attrs as any)?.owningUnit)) {
       addRepoFinding({
-        checkId: 'EA_CAPABILITY_REQUIRES_APPLICATION_SERVICE_SUPPORT',
+        checkId: 'EA_CAPABILITY_NO_IT_OWNERSHIP',
         severity: 'Error',
-        message: `Capability ‘${displayName(cap)}’ has no supporting Application Service.`,
+        message: `Capability ‘${displayName(cap)}’ must not be owned by IT.`,
+        elementId: cap.id,
+        elementType: cap.type,
+        collection: 'capabilities',
+      });
+    }
+
+    const lifecycleStatus = getString((attrs as any)?.lifecycleStatus);
+    if (lifecycleStatus === 'Deprecated' || lifecycleStatus === 'Retired') {
+      addRepoFinding({
+        checkId: 'EA_CAPABILITY_STABLE_OVER_TIME',
+        severity: 'Error',
+        message: `Capability ‘${displayName(cap)}’ must be stable over time (not Deprecated/Retired).`,
         elementId: cap.id,
         elementType: cap.type,
         collection: 'capabilities',
@@ -829,20 +922,90 @@ export function buildGovernanceDebt(
     }
   }
 
-  // 4) Application Service belongs to exactly one Application.
+  // 3b) Business Process names must be verb-based.
+  for (const proc of activeObjects.filter((o) => o.type === 'BusinessProcess')) {
+    const attrs = proc.attributes ?? {};
+    const name = getString(attrs.name) || proc.id;
+    if (!isVerbBasedProcessName(name)) {
+      addRepoFinding({
+        checkId: 'EA_PROCESS_VERB_NAME',
+        severity: 'Error',
+        message: `BusinessProcess ‘${displayName(proc)}’ must start with a verb (e.g., “Place Order”).`,
+        elementId: proc.id,
+        elementType: proc.type,
+        collection: 'businessProcesses',
+      });
+    }
+  }
+
+  // 3c) Application rules: logical (no physical terms) and must serve business processes.
+  for (const app of activeObjects.filter((o) => o.type === 'Application')) {
+    const attrs = app.attributes ?? {};
+    const name = getString(attrs.name) || app.id;
+    const description = getString(attrs.description);
+    const offending = findPhysicalTerm(`${name} ${description}`);
+    if (offending) {
+      addRepoFinding({
+        checkId: 'EA_APPLICATION_NO_PHYSICAL_TERMS',
+        severity: 'Error',
+        message: `Application ‘${displayName(app)}’ must be logical (no physical infrastructure term “${offending}”).`,
+        elementId: app.id,
+        elementType: app.type,
+        collection: 'applications',
+      });
+    }
+
+    const serves = eaRelationships.filter((r) => {
+      if (r.type !== 'SERVED_BY') return false;
+      if (normalizeId(r.toId) !== app.id) return false;
+      const endpoints = activeRelEndpoints(r);
+      return endpoints?.from.type === 'BusinessProcess';
+    });
+
+    if (serves.length < 1) {
+      addRepoFinding({
+        checkId: 'EA_APPLICATION_REQUIRES_BUSINESS_PROCESS',
+        severity: 'Error',
+        message: `Application ‘${displayName(app)}’ must be served to at least one BusinessProcess via SERVED_BY.`,
+        elementId: app.id,
+        elementType: app.type,
+        collection: 'applications',
+      });
+    }
+  }
+
+  // 4) Application Service belongs to exactly one Application and must be used.
   for (const svc of activeObjects.filter((o) => o.type === 'ApplicationService')) {
     const providers = eaRelationships.filter((r) => {
-      if (r.type !== 'PROVIDES') return false;
-      if (normalizeId(r.toId) !== svc.id) return false;
+      if (r.type !== 'PROVIDED_BY') return false;
+      if (normalizeId(r.fromId) !== svc.id) return false;
       const endpoints = activeRelEndpoints(r);
-      return endpoints?.from.type === 'Application';
+      return endpoints?.to.type === 'Application';
     });
 
     if (providers.length !== 1) {
       addRepoFinding({
         checkId: 'EA_APPLICATION_SERVICE_REQUIRES_APPLICATION',
         severity: 'Error',
-        message: `Application Service ‘${displayName(svc)}’ must belong to exactly one Application via PROVIDES (found ${providers.length}).`,
+        message: `Application Service ‘${displayName(svc)}’ must belong to exactly one Application via PROVIDED_BY (found ${providers.length}).`,
+        elementId: svc.id,
+        elementType: svc.type,
+        collection: 'applicationServices',
+      });
+    }
+
+    const usages = eaRelationships.filter((r) => {
+      if (r.type !== 'USED_BY') return false;
+      if (normalizeId(r.fromId) !== svc.id) return false;
+      const endpoints = activeRelEndpoints(r);
+      return endpoints?.to.type === 'Application' || endpoints?.to.type === 'BusinessProcess';
+    });
+
+    if (usages.length < 1) {
+      addRepoFinding({
+        checkId: 'EA_APPLICATION_SERVICE_REQUIRES_USAGE',
+        severity: 'Error',
+        message: `Application Service ‘${displayName(svc)}’ must be used by at least one Application or BusinessProcess via USED_BY.`,
         elementId: svc.id,
         elementType: svc.type,
         collection: 'applicationServices',

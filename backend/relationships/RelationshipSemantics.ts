@@ -26,18 +26,22 @@ export const RELATIONSHIP_ENDPOINT_RULES: Readonly<Record<string, RelationshipEn
     ],
   },
 
-  // Business-process execution (legacy support)
-  REALIZES: { from: ['BusinessProcess'], to: ['Application'] },
+  // Business-process realization
+  REALIZES: { from: ['BusinessProcess'], to: ['Capability'] },
+  // Business-process sequencing
+  TRIGGERS: { from: ['BusinessProcess'], to: ['BusinessProcess'] },
 
   // Enterprise / organization
   OWNS: { from: ['Enterprise'], to: ['Enterprise', 'Capability', 'Application', 'Programme'] },
   HAS: { from: ['Enterprise'], to: ['Department'] },
 
-  // Business services
-  REALIZED_BY: { from: ['Capability'], to: ['BusinessService'] },
+  // Capability realization by business process
+  REALIZED_BY: { from: ['Capability'], to: ['BusinessProcess'] },
 
   // Application services
-  PROVIDES: { from: ['Application'], to: ['ApplicationService'] },
+  EXPOSES: { from: ['Application'], to: ['ApplicationService'] },
+  PROVIDED_BY: { from: ['ApplicationService'], to: ['Application'] },
+  USED_BY: { from: ['ApplicationService'], to: ['Application', 'BusinessProcess'] },
   SUPPORTS: { from: ['ApplicationService'], to: ['BusinessService'] },
 
   // Application service dependencies
@@ -54,18 +58,79 @@ export const RELATIONSHIP_ENDPOINT_RULES: Readonly<Record<string, RelationshipEn
     ],
   },
 
+  // Business process served by application
+  SERVED_BY: { from: ['BusinessProcess'], to: ['Application'] },
+
   // Application dependency / impact analysis
   INTEGRATES_WITH: { from: ['Application'], to: ['Application'] },
   DEPENDS_ON: { from: ['ApplicationService'], to: ['ApplicationService'] },
+  USES: { from: ['Application'], to: ['Application'] },
 
-  // Application-to-infrastructure traceability
-  HOSTED_ON: { from: ['Application'], to: ['Technology'] },
+  // Application-to-infrastructure deployment
+  DEPLOYED_ON: {
+    from: ['Application'],
+    to: [
+      'Technology',
+      'Node',
+      'Server',
+      'Compute',
+      'VM',
+      'Container',
+      'Runtime',
+      'Database',
+      'Storage',
+      'Network',
+      'LoadBalancer',
+      'API',
+      'MessageBroker',
+      'IntegrationPlatform',
+      'CloudService',
+    ],
+  },
 
-  // Strategy-to-execution linkage
+  // Technology-to-technology connectivity
+  CONNECTS_TO: {
+    from: [
+      'Technology',
+      'Node',
+      'Server',
+      'Compute',
+      'VM',
+      'Container',
+      'Runtime',
+      'Database',
+      'Storage',
+      'Network',
+      'LoadBalancer',
+      'API',
+      'MessageBroker',
+      'IntegrationPlatform',
+      'CloudService',
+    ],
+    to: [
+      'Technology',
+      'Node',
+      'Server',
+      'Compute',
+      'VM',
+      'Container',
+      'Runtime',
+      'Database',
+      'Storage',
+      'Network',
+      'LoadBalancer',
+      'API',
+      'MessageBroker',
+      'IntegrationPlatform',
+      'CloudService',
+    ],
+  },
+
+  // Implementation & Migration linkage
   IMPACTS: { from: ['Programme'], to: ['Capability'] },
   IMPLEMENTS: { from: ['Project'], to: ['Application'] },
 
-  // Strategy (legacy)
+  // Implementation & Migration (legacy)
   DELIVERS: { from: ['Programme'], to: ['Capability', 'Application', 'Technology'] },
 } as const;
 

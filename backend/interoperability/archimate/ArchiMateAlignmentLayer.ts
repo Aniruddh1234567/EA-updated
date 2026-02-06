@@ -138,7 +138,7 @@ const RELATIONSHIP_CONCEPTS_3X: Readonly<Record<string, RelationshipAlignment>> 
       'Preferred internal semantic for capability hierarchy/composition. Exported as Composition (best-fit) in ArchiMate alignment.',
   },
 
-  // Internal: BusinessProcess -> Application
+  // Internal: Capability -> BusinessProcess
   REALIZED_BY: {
     version: ARCHIMATE_3_LATEST,
     internalRelationshipType: 'REALIZED_BY',
@@ -146,7 +146,7 @@ const RELATIONSHIP_CONCEPTS_3X: Readonly<Record<string, RelationshipAlignment>> 
     concept: { id: 'Serving', name: 'Serving' },
     direction: 'SameDirection',
     notes:
-      'Best-fit: an Application (component/service) serves a Business Process. If you model “application implements process logic”, consider Realization.',
+      'Best-fit: a Capability is realized by a Business Process. Keep Application realization as REALIZES for process-to-application traceability.',
   },
 
   // Internal: Application -> Application
@@ -183,9 +183,9 @@ const RELATIONSHIP_CONCEPTS_3X: Readonly<Record<string, RelationshipAlignment>> 
   },
 
   // Internal: Application -> Technology
-  HOSTED_ON: {
+  DEPLOYED_ON: {
     version: ARCHIMATE_3_LATEST,
-    internalRelationshipType: 'HOSTED_ON',
+    internalRelationshipType: 'DEPLOYED_ON',
     status: 'Supported',
     concept: { id: 'Assignment', name: 'Assignment' },
     direction: 'SameDirection',

@@ -434,6 +434,8 @@ const EaExplorerSiderContent: React.FC<{
 
   const createNewElement = React.useCallback(
     (type: ObjectType) => {
+      message.info('Create new elements from the EA Toolbox. Explorer is for browsing and reuse.');
+      return;
       if (isReadOnlyMode) {
         message.warning('Read-only mode: creation is disabled.');
         return;
@@ -833,17 +835,13 @@ const EaExplorerSiderContent: React.FC<{
 
       const items = [] as any[];
       if (typeFromKey) {
-        const guard = canCreateObjectTypeForLifecycleCoverage(metadata?.lifecycleCoverage, typeFromKey);
-        items.push({ key: 'new', label: 'New Element', disabled: !guard.ok || isReadOnlyMode });
+        items.push({ key: 'new', label: 'Create in Toolbox', disabled: true });
       }
 
       if (objectSelection) {
         const selectedType = eaRepository.objects.get(objectSelection.objectId)?.type;
-        const guard = selectedType
-          ? canCreateObjectTypeForLifecycleCoverage(metadata?.lifecycleCoverage, selectedType)
-          : ({ ok: true } as const);
         items.push(
-          { key: 'new', label: 'New Element', disabled: !guard.ok || isReadOnlyMode },
+          { key: 'new', label: 'Create in Toolbox', disabled: true },
           { key: 'duplicate', label: 'Duplicate', disabled: isReadOnlyMode },
           { type: 'divider' },
           { key: 'delete', label: 'Delete (soft delete)', danger: true, disabled: isReadOnlyMode },

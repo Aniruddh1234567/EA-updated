@@ -56,7 +56,22 @@ const CSV_ENTITIES: { value: CsvImportSourceEntity; label: string }[] = [
 ];
 
 const ELEMENT_TYPES = ['Capability', 'BusinessProcess', 'Application', 'Technology', 'Programme'] as const;
-const RELATIONSHIP_TYPES = ['DECOMPOSES_TO', 'COMPOSED_OF', 'REALIZED_BY', 'INTEGRATES_WITH', 'CONSUMES', 'HOSTED_ON', 'IMPACTS'] as const;
+const RELATIONSHIP_TYPES = [
+  'DECOMPOSES_TO',
+  'COMPOSED_OF',
+  'REALIZED_BY',
+  'REALIZES',
+  'TRIGGERS',
+  'SERVED_BY',
+  'EXPOSES',
+  'PROVIDED_BY',
+  'USED_BY',
+  'USES',
+  'INTEGRATES_WITH',
+  'CONSUMES',
+  'DEPLOYED_ON',
+  'IMPACTS',
+] as const;
 
 const downloadTextFile = (fileName: string, text: string) => {
   const blob = new Blob([text], { type: 'text/csv;charset=utf-8' });

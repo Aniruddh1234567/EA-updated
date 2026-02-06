@@ -95,9 +95,9 @@ export const STANDARD_GOVERNANCE_RULE_SET = Object.freeze([
     ruleName: 'Deprecated technology must not host active applications',
     ruleCategory: 'Consistency',
     applicableElementTypes: ['Application', 'Technology'],
-    applicableRelationshipTypes: ['HOSTED_ON'],
+    applicableRelationshipTypes: ['DEPLOYED_ON'],
     ruleExpression:
-      "FOR Relationship WHERE relationshipType='HOSTED_ON' AND status='Approved' REQUIRE NOT (target.lifecycleStatus='Deprecated' AND source.lifecycleStatus='Active')",
+      "FOR Relationship WHERE relationshipType='DEPLOYED_ON' AND status='Approved' REQUIRE NOT (target.lifecycleStatus='Deprecated' AND source.lifecycleStatus='Active')",
     severity: 'Error',
     rationale: 'Hosting active applications on deprecated technology increases operational risk and undermines platform standards.',
     ownerRole: 'EA Governance Board',

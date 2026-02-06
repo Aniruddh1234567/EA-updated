@@ -205,14 +205,14 @@ export const buildSeedPlan = (args: { repository: EaRepository; metadata: EaRepo
     warnings.push('Skipped capability → application support links because capabilities were not created.');
   }
 
-  // Application → Technology hosting/dependency
+  // Application → Technology deployment
   if (technologyIds.length > 0 && applicationIds.length > 0) {
     applicationIds.forEach((appId, idx) => {
       const targetTech = technologyIds[idx % technologyIds.length];
-      pushRelationship({ fromId: appId, toId: targetTech, type: 'HOSTED_ON' });
+      pushRelationship({ fromId: appId, toId: targetTech, type: 'DEPLOYED_ON' });
     });
   } else if (applicationIds.length > 0) {
-    warnings.push('Skipped application → technology hosting links because technologies were not created.');
+    warnings.push('Skipped application → technology deployment links because technologies were not created.');
   }
 
   // Optional enterprise ownership for capabilities/applications (only when enterprise exists and allowed)

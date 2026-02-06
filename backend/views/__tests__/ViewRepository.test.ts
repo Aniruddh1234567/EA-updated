@@ -13,8 +13,8 @@ const makeView = (overrides?: Partial<ViewDefinition>): ViewDefinition => {
     rootElementType: undefined,
     maxDepth: 2,
     // Must conform to CapabilityMap viewType rules (see backend/views/ViewRepository.ts).
-    allowedElementTypes: ['Capability', 'BusinessService', 'ApplicationService', 'Application'],
-    allowedRelationshipTypes: ['DECOMPOSES_TO', 'REALIZED_BY', 'SUPPORTS', 'SUPPORTED_BY'],
+    allowedElementTypes: ['Capability', 'BusinessProcess'],
+    allowedRelationshipTypes: ['DECOMPOSES_TO', 'COMPOSED_OF', 'REALIZED_BY'],
     layoutType: 'Force',
     orientation: 'LeftToRight',
     scopeType: 'ENTIRE_REPOSITORY',

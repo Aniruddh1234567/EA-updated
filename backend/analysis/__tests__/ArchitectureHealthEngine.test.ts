@@ -64,11 +64,11 @@ const makeTechnology = (id: string, overrides?: Partial<Technology>): Technology
   };
 };
 
-const makeHostedOn = (id: string, appId: string, techId: string): BaseArchitectureRelationship => {
+const makeDeployedOn = (id: string, appId: string, techId: string): BaseArchitectureRelationship => {
   const now = new Date('2026-01-11T00:00:00.000Z').toISOString();
   return {
     id,
-    relationshipType: 'HOSTED_ON',
+    relationshipType: 'DEPLOYED_ON',
     sourceElementId: appId,
     sourceElementType: 'Application',
     targetElementId: techId,
@@ -146,7 +146,7 @@ describe('ArchitectureHealthEngine', () => {
     expect(repo.addElement('technologies', tech).ok).toBe(true);
 
     const relRepo = createRelationshipRepository(repo);
-    expect(relRepo.addRelationship(makeHostedOn('rel-1', 'app-1', 'tech-1')).ok).toBe(true);
+    expect(relRepo.addRelationship(makeDeployedOn('rel-1', 'app-1', 'tech-1')).ok).toBe(true);
 
     const engine = new ArchitectureHealthEngine();
 
