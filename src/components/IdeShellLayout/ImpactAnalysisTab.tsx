@@ -1,5 +1,5 @@
 import React from 'react';
-import { Alert, Button, Card, Collapse, Empty, Form, InputNumber, Select, Space, Tag, Typography, message } from 'antd';
+import { Alert, Button, Card, Collapse, Empty, Form, InputNumber, Select, Space, Tag, Typography } from 'antd';
 import { CompressOutlined, MinusOutlined, PlusOutlined } from '@ant-design/icons';
 import cytoscape, { type Core } from 'cytoscape';
 import { analyzeImpactLocally } from '@/analysis/localImpactAnalysis';
@@ -11,6 +11,7 @@ import { useEaRepository } from '@/ea/EaRepositoryContext';
 import { useIdeSelection } from '@/ide/IdeSelectionContext';
 import { useIdeShell } from './index';
 import { getTimeHorizonWindow } from '@/repository/timeHorizonPolicy';
+import { message } from '@/ea/eaConsole';
 
 type ResultState = { summary: ImpactSummary; ranked: ImpactRankedElement[] } | null;
 type TreeNode = { id: string; name: string; type: ObjectType | 'Unknown'; children: TreeNode[]; revisit?: boolean };

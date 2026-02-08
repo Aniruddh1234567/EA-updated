@@ -145,3 +145,80 @@ ol {
 :global(.ant-tree-treenode-selected) {
   background: transparent !important;
 }
+
+/* ═══════════════════════════════════════════════
+   Dark theme globals
+   ═══════════════════════════════════════════════ */
+[data-theme="dark"] body {
+  color-scheme: dark;
+}
+
+/* Scrollbar styling for dark mode (WebKit browsers / Electron) */
+[data-theme="dark"] ::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+[data-theme="dark"] ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+[data-theme="dark"] ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 5px;
+}
+
+[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+[data-theme="dark"] ::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Ensure Ant Pro layout adapts in dark mode */
+[data-theme="dark"] :global(.ant-pro-layout),
+[data-theme="dark"] :global(.ant-pro-layout-container) {
+  background: inherit;
+}
+
+/* Dark mode: ensure Ant dropdown menus follow dark theme */
+[data-theme="dark"] :global(.ant-dropdown-menu) {
+  background: #252526;
+  border: 1px solid #3c3c3c;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
+}
+
+[data-theme="dark"] :global(.ant-dropdown-menu-item) {
+  color: #d4d4d4;
+}
+
+[data-theme="dark"] :global(.ant-dropdown-menu-item:hover) {
+  background: #2a2d2e;
+}
+
+/* Dark mode: Modal overlay */
+[data-theme="dark"] :global(.ant-modal-content) {
+  background: #252526;
+  border: 1px solid #3c3c3c;
+}
+
+[data-theme="dark"] :global(.ant-modal-header) {
+  background: #252526;
+}
+
+/* Dark mode: Drawer */
+[data-theme="dark"] :global(.ant-drawer-content) {
+  background: #252526;
+}
+
+/* Dark mode: Tooltip */
+[data-theme="dark"] :global(.ant-tooltip-inner) {
+  background: #333333;
+}
+
+/* Dark mode: Keep ant-menu horizontal backgrounds transparent in header */
+[data-theme="dark"] :global(.ant-menu-horizontal) {
+  background: transparent !important;
+  border-bottom: none !important;
+}

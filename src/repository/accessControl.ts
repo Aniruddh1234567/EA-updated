@@ -137,12 +137,9 @@ export const assertRbacEnabled = (context: string): void => {
 };
 
 export const hasRepositoryPermission = (
-  role: RepositoryRole,
-  permission: RepositoryPermission,
+  _role: RepositoryRole,
+  _permission: RepositoryPermission,
 ): boolean => {
-  if (!ENABLE_RBAC) {
-    // Temporary single-user mode: grant full access while RBAC is disabled.
-    return true;
-  }
-  return ROLE_PERMISSIONS[role].has(permission);
+  // Full access always — RBAC removed.
+  return true;
 };

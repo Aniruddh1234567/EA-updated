@@ -81,8 +81,8 @@ const enqueueRepositoryImport = async (filePath) => {
 function createWindow() {
   const titleBarOverlay = process.platform === 'win32'
     ? {
-        color: '#1b2a55',
-        symbolColor: '#f3f6ff',
+        color: '#1e1e1e',
+        symbolColor: '#cccccc',
         height: 34,
       }
     : undefined;

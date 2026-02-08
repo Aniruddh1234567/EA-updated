@@ -6,7 +6,6 @@ import { CreateViewWizard } from '@/pages/views/create';
 import { useEaRepository } from '@/ea/EaRepositoryContext';
 import { ENABLE_RBAC, hasRepositoryPermission, type RepositoryRole } from '@/repository/accessControl';
 import type { ViewInstance } from '@/diagram-studio/viewpoints/ViewInstance';
-import { ViewStore } from '@/diagram-studio/view-runtime/ViewStore';
 
 const CreateViewController: React.FC = () => {
   const { initialState } = useModel('@@initialState');
@@ -26,6 +25,15 @@ const CreateViewController: React.FC = () => {
   const canEditView = hasRepositoryPermission(userRole, 'editView');
   const viewReadOnly = governanceStrict && !canEditView;
 
+  const generateWorkingViewId = React.useCallback(() => {
+    try {
+      if (typeof globalThis.crypto?.randomUUID === 'function') return `working-view-${globalThis.crypto.randomUUID()}`;
+    } catch {
+      // fall through
+    }
+    return `working-view-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  }, []);
+
   React.useEffect(() => {
     const onStudioViewCreate = () => {
       try {
@@ -43,37 +51,31 @@ const CreateViewController: React.FC = () => {
   const handleCreated = React.useCallback(
     (view: ViewInstance) => {
       try {
-        const normalized = view.status === 'SAVED' ? view : { ...view, status: 'SAVED' as const };
-        if (normalized !== view) {
-          ViewStore.save(normalized);
-        }
+        const nextId = view.id?.trim() || generateWorkingViewId();
+        const draft: ViewInstance = {
+          ...view,
+          id: nextId,
+          status: 'DRAFT',
+          layoutMetadata: { ...(view.layoutMetadata ?? {}), workingView: true },
+        };
         setOpen(false);
         setModalKey((prev) => prev + 1);
-        window.dispatchEvent(new Event('ea:viewsChanged'));
         if (canEditView) {
-          Modal.confirm({
-            title: 'Edit in Studio now?',
-            content: 'Open this view in Studio for editing?',
-            okText: 'Edit in Studio',
-            cancelText: 'Later',
-            onOk: () => {
-              try {
-                window.dispatchEvent(
-                  new CustomEvent('ea:studio.view.open', {
-                    detail: { viewId: view.id, readOnly: viewReadOnly },
-                  }),
-                );
-              } catch (err) {
-                console.error('[CreateViewController] Failed to open view in Studio.', err);
-              }
-            },
-          });
+          try {
+            window.dispatchEvent(
+              new CustomEvent('ea:studio.view.open', {
+                detail: { viewId: draft.id, view: draft, readOnly: viewReadOnly, working: true },
+              }),
+            );
+          } catch (err) {
+            console.error('[CreateViewController] Failed to open working view in Studio.', err);
+          }
         }
       } catch (err) {
         console.error('[CreateViewController] Failed during Create View completion.', err);
       }
     },
-    [canEditView, viewReadOnly],
+    [canEditView, generateWorkingViewId, viewReadOnly],
   );
 
   return (

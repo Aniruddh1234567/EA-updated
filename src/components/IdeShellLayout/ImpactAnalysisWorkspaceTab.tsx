@@ -1,5 +1,5 @@
 import React from 'react';
-import { Alert, Button, Card, Divider, Form, Input, InputNumber, Select, Space, Switch, Typography, message } from 'antd';
+import { Alert, Button, Card, Divider, Form, Input, InputNumber, Select, Space, Switch, Typography } from 'antd';
 
 import type { BaseArchitectureElement } from '../../../backend/repository/BaseArchitectureElement';
 import type {
@@ -18,6 +18,7 @@ import {
 } from '@/services/ea/repository';
 import { postImpactAnalyze } from '@/services/ea/impact';
 import { useIdeShell } from './index';
+import { message } from '@/ea/eaConsole';
 import { useEaProject } from '@/ea/EaProjectContext';
 import { createAnalysisResult } from '@/analysis/analysisResultsStore';
 import { useEaRepository } from '@/ea/EaRepositoryContext';

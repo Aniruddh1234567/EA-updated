@@ -1,0 +1,372 @@
+{
+  "version": "3.2.1",
+  "source": "Archimate-PlantUML sprites",
+  "elements": [
+    {
+      "key": "application-collaboration",
+      "layer": "Application",
+      "name": "Application Collaboration",
+      "icon": "/rendering/archimate-icons/application-collaboration.svg"
+    },
+    {
+      "key": "application-component",
+      "layer": "Application",
+      "name": "Application Component",
+      "icon": "/rendering/archimate-icons/application-component.svg"
+    },
+    {
+      "key": "application-dataobject",
+      "layer": "Application",
+      "name": "Application Dataobject",
+      "icon": "/rendering/archimate-icons/application-dataobject.svg"
+    },
+    {
+      "key": "application-event",
+      "layer": "Application",
+      "name": "Application Event",
+      "icon": "/rendering/archimate-icons/application-event.svg"
+    },
+    {
+      "key": "application-function",
+      "layer": "Application",
+      "name": "Application Function",
+      "icon": "/rendering/archimate-icons/application-function.svg"
+    },
+    {
+      "key": "application-interaction",
+      "layer": "Application",
+      "name": "Application Interaction",
+      "icon": "/rendering/archimate-icons/application-interaction.svg"
+    },
+    {
+      "key": "application-interface",
+      "layer": "Application",
+      "name": "Application Interface",
+      "icon": "/rendering/archimate-icons/application-interface.svg"
+    },
+    {
+      "key": "application-process",
+      "layer": "Application",
+      "name": "Application Process",
+      "icon": "/rendering/archimate-icons/application-process.svg"
+    },
+    {
+      "key": "application-service",
+      "layer": "Application",
+      "name": "Application Service",
+      "icon": "/rendering/archimate-icons/application-service.svg"
+    },
+    {
+      "key": "business-actor",
+      "layer": "Business",
+      "name": "Business Actor",
+      "icon": "/rendering/archimate-icons/business-actor.svg"
+    },
+    {
+      "key": "business-collaboration",
+      "layer": "Business",
+      "name": "Business Collaboration",
+      "icon": "/rendering/archimate-icons/business-collaboration.svg"
+    },
+    {
+      "key": "business-contract",
+      "layer": "Business",
+      "name": "Business Contract",
+      "icon": "/rendering/archimate-icons/business-contract.svg"
+    },
+    {
+      "key": "business-event",
+      "layer": "Business",
+      "name": "Business Event",
+      "icon": "/rendering/archimate-icons/business-event.svg"
+    },
+    {
+      "key": "business-function",
+      "layer": "Business",
+      "name": "Business Function",
+      "icon": "/rendering/archimate-icons/business-function.svg"
+    },
+    {
+      "key": "business-interaction",
+      "layer": "Business",
+      "name": "Business Interaction",
+      "icon": "/rendering/archimate-icons/business-interaction.svg"
+    },
+    {
+      "key": "business-interface",
+      "layer": "Business",
+      "name": "Business Interface",
+      "icon": "/rendering/archimate-icons/business-interface.svg"
+    },
+    {
+      "key": "business-location",
+      "layer": "Business",
+      "name": "Business Location",
+      "icon": "/rendering/archimate-icons/business-location.svg"
+    },
+    {
+      "key": "business-object",
+      "layer": "Business",
+      "name": "Business Object",
+      "icon": "/rendering/archimate-icons/business-object.svg"
+    },
+    {
+      "key": "business-process",
+      "layer": "Business",
+      "name": "Business Process",
+      "icon": "/rendering/archimate-icons/business-process.svg"
+    },
+    {
+      "key": "business-product",
+      "layer": "Business",
+      "name": "Business Product",
+      "icon": "/rendering/archimate-icons/business-product.svg"
+    },
+    {
+      "key": "business-representation",
+      "layer": "Business",
+      "name": "Business Representation",
+      "icon": "/rendering/archimate-icons/business-representation.svg"
+    },
+    {
+      "key": "business-role",
+      "layer": "Business",
+      "name": "Business Role",
+      "icon": "/rendering/archimate-icons/business-role.svg"
+    },
+    {
+      "key": "business-service",
+      "layer": "Business",
+      "name": "Business Service",
+      "icon": "/rendering/archimate-icons/business-service.svg"
+    },
+    {
+      "key": "implementation-deliverable",
+      "layer": "Implementation & Migration",
+      "name": "Implementation Deliverable",
+      "icon": "/rendering/archimate-icons/implementation-deliverable.svg"
+    },
+    {
+      "key": "implementation-event",
+      "layer": "Implementation & Migration",
+      "name": "Implementation Event",
+      "icon": "/rendering/archimate-icons/implementation-event.svg"
+    },
+    {
+      "key": "implementation-gap",
+      "layer": "Implementation & Migration",
+      "name": "Implementation Gap",
+      "icon": "/rendering/archimate-icons/implementation-gap.svg"
+    },
+    {
+      "key": "implementation-plateau",
+      "layer": "Implementation & Migration",
+      "name": "Implementation Plateau",
+      "icon": "/rendering/archimate-icons/implementation-plateau.svg"
+    },
+    {
+      "key": "implementation-workpackage",
+      "layer": "Implementation & Migration",
+      "name": "Implementation Workpackage",
+      "icon": "/rendering/archimate-icons/implementation-workpackage.svg"
+    },
+    {
+      "key": "motivation-assessment",
+      "layer": "Governance",
+      "name": "Motivation Assessment",
+      "icon": "/rendering/archimate-icons/motivation-assessment.svg"
+    },
+    {
+      "key": "motivation-constraint",
+      "layer": "Governance",
+      "name": "Motivation Constraint",
+      "icon": "/rendering/archimate-icons/motivation-constraint.svg"
+    },
+    {
+      "key": "motivation-driver",
+      "layer": "Governance",
+      "name": "Motivation Driver",
+      "icon": "/rendering/archimate-icons/motivation-driver.svg"
+    },
+    {
+      "key": "motivation-goal",
+      "layer": "Governance",
+      "name": "Motivation Goal",
+      "icon": "/rendering/archimate-icons/motivation-goal.svg"
+    },
+    {
+      "key": "motivation-meaning",
+      "layer": "Governance",
+      "name": "Motivation Meaning",
+      "icon": "/rendering/archimate-icons/motivation-meaning.svg"
+    },
+    {
+      "key": "motivation-outcome",
+      "layer": "Governance",
+      "name": "Motivation Outcome",
+      "icon": "/rendering/archimate-icons/motivation-outcome.svg"
+    },
+    {
+      "key": "motivation-principle",
+      "layer": "Governance",
+      "name": "Motivation Principle",
+      "icon": "/rendering/archimate-icons/motivation-principle.svg"
+    },
+    {
+      "key": "motivation-requirement",
+      "layer": "Governance",
+      "name": "Motivation Requirement",
+      "icon": "/rendering/archimate-icons/motivation-requirement.svg"
+    },
+    {
+      "key": "motivation-stakeholder",
+      "layer": "Governance",
+      "name": "Motivation Stakeholder",
+      "icon": "/rendering/archimate-icons/motivation-stakeholder.svg"
+    },
+    {
+      "key": "motivation-value",
+      "layer": "Governance",
+      "name": "Motivation Value",
+      "icon": "/rendering/archimate-icons/motivation-value.svg"
+    },
+    {
+      "key": "other-grouping",
+      "layer": "Business",
+      "name": "Other Grouping",
+      "icon": "/rendering/archimate-icons/other-grouping.svg"
+    },
+    {
+      "key": "other-location",
+      "layer": "Business",
+      "name": "Other Location",
+      "icon": "/rendering/archimate-icons/other-location.svg"
+    },
+    {
+      "key": "strategy-capability",
+      "layer": "Business",
+      "name": "Strategy Capability",
+      "icon": "/rendering/archimate-icons/strategy-capability.svg"
+    },
+    {
+      "key": "strategy-courseofaction",
+      "layer": "Business",
+      "name": "Strategy Courseofaction",
+      "icon": "/rendering/archimate-icons/strategy-courseofaction.svg"
+    },
+    {
+      "key": "strategy-resource",
+      "layer": "Business",
+      "name": "Strategy Resource",
+      "icon": "/rendering/archimate-icons/strategy-resource.svg"
+    },
+    {
+      "key": "strategy-valuestream",
+      "layer": "Business",
+      "name": "Strategy Valuestream",
+      "icon": "/rendering/archimate-icons/strategy-valuestream.svg"
+    },
+    {
+      "key": "technology-artifact",
+      "layer": "Technology",
+      "name": "Technology Artifact",
+      "icon": "/rendering/archimate-icons/technology-artifact.svg"
+    },
+    {
+      "key": "technology-collaboration",
+      "layer": "Technology",
+      "name": "Technology Collaboration",
+      "icon": "/rendering/archimate-icons/technology-collaboration.svg"
+    },
+    {
+      "key": "technology-communicationnetwork",
+      "layer": "Technology",
+      "name": "Technology Communicationnetwork",
+      "icon": "/rendering/archimate-icons/technology-communicationnetwork.svg"
+    },
+    {
+      "key": "technology-device",
+      "layer": "Technology",
+      "name": "Technology Device",
+      "icon": "/rendering/archimate-icons/technology-device.svg"
+    },
+    {
+      "key": "technology-distributionnetwork",
+      "layer": "Technology",
+      "name": "Technology Distributionnetwork",
+      "icon": "/rendering/archimate-icons/technology-distributionnetwork.svg"
+    },
+    {
+      "key": "technology-equipment",
+      "layer": "Technology",
+      "name": "Technology Equipment",
+      "icon": "/rendering/archimate-icons/technology-equipment.svg"
+    },
+    {
+      "key": "technology-event",
+      "layer": "Technology",
+      "name": "Technology Event",
+      "icon": "/rendering/archimate-icons/technology-event.svg"
+    },
+    {
+      "key": "technology-facility",
+      "layer": "Technology",
+      "name": "Technology Facility",
+      "icon": "/rendering/archimate-icons/technology-facility.svg"
+    },
+    {
+      "key": "technology-function",
+      "layer": "Technology",
+      "name": "Technology Function",
+      "icon": "/rendering/archimate-icons/technology-function.svg"
+    },
+    {
+      "key": "technology-interaction",
+      "layer": "Technology",
+      "name": "Technology Interaction",
+      "icon": "/rendering/archimate-icons/technology-interaction.svg"
+    },
+    {
+      "key": "technology-interface",
+      "layer": "Technology",
+      "name": "Technology Interface",
+      "icon": "/rendering/archimate-icons/technology-interface.svg"
+    },
+    {
+      "key": "technology-material",
+      "layer": "Technology",
+      "name": "Technology Material",
+      "icon": "/rendering/archimate-icons/technology-material.svg"
+    },
+    {
+      "key": "technology-node",
+      "layer": "Technology",
+      "name": "Technology Node",
+      "icon": "/rendering/archimate-icons/technology-node.svg"
+    },
+    {
+      "key": "technology-path",
+      "layer": "Technology",
+      "name": "Technology Path",
+      "icon": "/rendering/archimate-icons/technology-path.svg"
+    },
+    {
+      "key": "technology-process",
+      "layer": "Technology",
+      "name": "Technology Process",
+      "icon": "/rendering/archimate-icons/technology-process.svg"
+    },
+    {
+      "key": "technology-service",
+      "layer": "Technology",
+      "name": "Technology Service",
+      "icon": "/rendering/archimate-icons/technology-service.svg"
+    },
+    {
+      "key": "technology-systemsoftware",
+      "layer": "Technology",
+      "name": "Technology Systemsoftware",
+      "icon": "/rendering/archimate-icons/technology-systemsoftware.svg"
+    }
+  ]
+}

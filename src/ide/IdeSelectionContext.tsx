@@ -10,7 +10,7 @@ export type IdeSelectionKind =
   | 'route'
   | 'workspace';
 
-export type SelectionSource = 'Explorer' | 'Diagram' | 'ImpactAnalysis';
+export type SelectionSource = 'Explorer' | 'Diagram' | 'ImpactAnalysis' | 'Console';
 
 export type IdeSelectionSnapshot = {
   kind: IdeSelectionKind;

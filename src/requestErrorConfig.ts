@@ -1,6 +1,6 @@
 ﻿import type { RequestOptions } from '@@/plugin-request/request';
 import type { RequestConfig } from '@umijs/max';
-import { message, notification } from 'antd';
+import { message, notification } from '@/ea/eaConsole';
 
 // 错误处理方案： 错误类型
 enum ErrorShowType {
@@ -58,8 +58,9 @@ export const errorConfig: RequestConfig = {
               break;
             case ErrorShowType.NOTIFICATION:
               notification.open({
-                title: errorCode,
+                message: errorCode ? String(errorCode) : 'Request error',
                 description: errorMessage,
+                domain: 'system',
               });
               break;
             case ErrorShowType.REDIRECT:

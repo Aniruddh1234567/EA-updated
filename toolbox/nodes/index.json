@@ -1,0 +1,21 @@
+{
+  "items": [
+    "technology-artifact",
+    "technology-collaboration",
+    "technology-communicationnetwork",
+    "technology-device",
+    "technology-distributionnetwork",
+    "technology-equipment",
+    "technology-event",
+    "technology-facility",
+    "technology-function",
+    "technology-interaction",
+    "technology-interface",
+    "technology-material",
+    "technology-node",
+    "technology-path",
+    "technology-process",
+    "technology-service",
+    "technology-systemsoftware"
+  ]
+}

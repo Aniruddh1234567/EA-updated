@@ -7,9 +7,10 @@ import {
   StepsForm,
 } from '@ant-design/pro-components';
 import { FormattedMessage, useIntl, useRequest } from '@umijs/max';
-import { Modal, message } from 'antd';
+import { Modal } from 'antd';
 import React, { cloneElement, useCallback, useState } from 'react';
 import { updateRule } from '@/services/ant-design-pro/api';
+import { message } from '@/ea/eaConsole';
 
 export type FormValueType = {
   target?: string;

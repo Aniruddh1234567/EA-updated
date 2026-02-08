@@ -1,21 +1,17 @@
 import {
   ApartmentOutlined,
   AppstoreOutlined,
-  CaretDownOutlined,
-  CaretRightOutlined,
   CheckOutlined,
   CloudOutlined,
   DatabaseOutlined,
-  DeleteOutlined,
   FileTextOutlined,
   ForkOutlined,
   FundProjectionScreenOutlined,
-  PlusOutlined,
   ProjectOutlined,
   SafetyOutlined,
   TeamOutlined,
 } from '@ant-design/icons';
-import { Alert, Button, Checkbox, Descriptions, Dropdown, Form, Input, Modal, Select, Space, Tag, Tree, Typography, message, notification } from 'antd';
+import { Alert, Button, Checkbox, Descriptions, Dropdown, Form, Input, Modal, Select, Space, Tag, Tree, Typography } from 'antd';
 import type { MenuProps } from 'antd';
 import type { DataNode, TreeProps } from 'antd/es/tree';
 import React from 'react';
@@ -25,6 +21,7 @@ import styles from './style.module.less';
 import { useIdeSelection } from '@/ide/IdeSelectionContext';
 import { useEaRepository } from '@/ea/EaRepositoryContext';
 import { dispatchIdeCommand } from '@/ide/ideCommands';
+import { message } from '@/ea/eaConsole';
 import type { ObjectType, RelationshipType } from '@/pages/dependency-view/utils/eaMetaModel';
 import {
   OBJECT_TYPE_DEFINITIONS,
@@ -35,13 +32,11 @@ import { isCustomFrameworkModelingEnabled } from '@/repository/customFrameworkCo
 import { isObjectTypeAllowedForReferenceFramework } from '@/repository/referenceFrameworkPolicy';
 import { hasRepositoryPermission, type RepositoryRole } from '@/repository/accessControl';
 import { guardInitializationForModeling } from '@/repository/elementCreationPolicy';
-import { updateViewRoot } from '../../../backend/views/ViewRepositoryStore';
 import { ViewStore } from '@/diagram-studio/view-runtime/ViewStore';
 import type { ViewInstance } from '@/diagram-studio/viewpoints/ViewInstance';
 import { ViewpointRegistry } from '@/diagram-studio/viewpoints/ViewpointRegistry';
 import { isObjectTypeEnabledForFramework } from '@/repository/customFrameworkConfig';
 import { useSeedSampleData } from '@/ea/useSeedSampleData';
-import type { ModelingState } from '@/ea/DesignWorkspaceStore';
 import { listBaselines, getBaselineById } from '../../../backend/baselines/BaselineStore';
 import type { Baseline } from '../../../backend/baselines/Baseline';
 import { listPlateaus, getPlateauById } from '../../../backend/roadmap/PlateauStore';
@@ -198,7 +193,11 @@ const normalizeId = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
 // GLOBAL RULE: Roadmaps describe change over time. Roadmaps never modify architecture truth. Truth is modified only in the active repository workspace.
 const PLANNING_READONLY_MESSAGE = '';
 
-const isSoftDeleted = (attributes: Record<string, unknown> | null | undefined) => Boolean((attributes as any)?._deleted === true);
+const isSoftDeleted = (attributes: Record<string, unknown> | null | undefined) => {
+  if ((attributes as any)?._deleted === true) return true;
+  const modelingState = String((attributes as any)?.modelingState ?? '').trim().toUpperCase();
+  return modelingState === 'DRAFT';
+};
 
 const nameForObject = (obj: { id: string; attributes?: Record<string, unknown> }) => {
   const raw = (obj.attributes as any)?.name;
@@ -240,18 +239,6 @@ const defaultLifecycleStateForFramework = (
     return lifecycleCoverage === 'To-Be' ? 'Target' : 'Baseline';
   }
   return lifecycleCoverage === 'To-Be' ? 'To-Be' : 'As-Is';
-};
-
-const MODELING_STATE_TAGS: Record<ModelingState, { label: string; color: string }> = {
-  DRAFT: { label: 'Draft', color: 'gold' },
-  COMMITTED: { label: 'Committed', color: 'green' },
-  REVIEW_READY: { label: 'Review ready', color: 'blue' },
-  APPROVED: { label: 'Approved', color: 'geekblue' },
-};
-
-const modelingStateForObject = (obj: { attributes?: Record<string, unknown> } | null | undefined): ModelingState | null => {
-  const raw = (obj?.attributes as any)?.modelingState;
-  return raw && raw in MODELING_STATE_TAGS ? (raw as ModelingState) : null;
 };
 
 const titleForObjectType = (type: ObjectType): string => {
@@ -758,7 +745,7 @@ const inferHierarchyRelationshipType = (parentType: ObjectType | undefined, chil
 const ExplorerTree: React.FC = () => {
   const { initialState } = useModel('@@initialState');
   const { selection, setSelection, setSelectedElement, setActiveElement } = useIdeSelection();
-  const { openRouteTab, openWorkspaceTab, openPropertiesPanel, hierarchyEditingEnabled, studioMode, requestStudioViewSwitch } = useIdeShell();
+  const { openRouteTab, openWorkspaceTab, openPropertiesPanel, hierarchyEditingEnabled } = useIdeShell();
   const { eaRepository, setEaRepository, trySetEaRepository, metadata, initializationState } = useEaRepository();
   // Force full platform access in local mode.
   const userRole: RepositoryRole = 'Owner';
@@ -988,7 +975,7 @@ const ExplorerTree: React.FC = () => {
 
   const permissionGuard = React.useCallback((_: any) => false, []);
 
-  const isReadOnlyMode = (metadata?.governanceMode ?? 'Advisory') === 'Advisory';
+  const isReadOnlyMode = false;
   const readOnlyLabel = React.useCallback(
     (label: string) => (isReadOnlyMode ? `${label} (read-only)` : label),
     [isReadOnlyMode],
@@ -1223,7 +1210,20 @@ const ExplorerTree: React.FC = () => {
     [eaRepository, metadata?.architectureScope, metadata?.repositoryName, normalizeDomainId],
   );
 
+  const storedExpansionRef = React.useRef(false);
   const [expandedKeys, setExpandedKeys] = React.useState<React.Key[]>(() => {
+    try {
+      const raw = localStorage.getItem('ea.explorer.expandedKeys');
+      if (raw) {
+        const parsed = JSON.parse(raw) as React.Key[];
+        if (Array.isArray(parsed)) {
+          storedExpansionRef.current = true;
+          return parsed;
+        }
+      }
+    } catch {
+      // ignore storage failures
+    }
     const enabledFrameworks = (metadata?.enabledFrameworks && metadata.enabledFrameworks.length > 0)
       ? metadata.enabledFrameworks
       : (metadata?.referenceFramework ? [metadata.referenceFramework] : []);
@@ -1240,6 +1240,7 @@ const ExplorerTree: React.FC = () => {
 
   React.useEffect(() => {
     // Recompute default expansion when creating/loading a repository.
+    if (storedExpansionRef.current) return;
     const enabledFrameworks = (metadata?.enabledFrameworks && metadata.enabledFrameworks.length > 0)
       ? metadata.enabledFrameworks
       : (metadata?.referenceFramework ? [metadata.referenceFramework] : []);
@@ -1260,6 +1261,14 @@ const ExplorerTree: React.FC = () => {
       setExpandedKeys([ROOT_KEYS.business, ROOT_KEYS.application, ROOT_KEYS.technology, ROOT_KEYS.implMig, 'explorer:implmig:plateaus', ROOT_KEYS.governance, ROOT_KEYS.views]);
     }
   }, [customModelingEnabled, metadata?.architectureScope, metadata?.enabledFrameworks, metadata?.referenceFramework]);
+
+  React.useEffect(() => {
+    try {
+      localStorage.setItem('ea.explorer.expandedKeys', JSON.stringify(expandedKeys));
+    } catch {
+      // ignore storage failures
+    }
+  }, [expandedKeys]);
 
   // Listen for repository/views changes to refresh the explorer tree
   React.useEffect(() => {
@@ -1392,7 +1401,7 @@ const ExplorerTree: React.FC = () => {
     const enterpriseInitializationCta: DataNode = {
       key: 'explorer:business:enterprises:init-cta',
       title: (
-        <div style={{ display: 'grid', gap: 8 }}>
+        <div className={styles.explorerTreeCta}>
           <Typography.Text strong style={{ margin: 0 }}>No Enterprise defined.</Typography.Text>
           <Typography.Text type="secondary" style={{ margin: 0 }}>
             Initialize the Enterprise Architecture to begin modeling.
@@ -1911,13 +1920,15 @@ const ExplorerTree: React.FC = () => {
     return [] as React.Key[];
   }, [elementKeyIndex, normalizeElementKey, selection?.keys]);
 
-  const parentByKey = React.useMemo(() => {
-    const map = new Map<string, string | null>();
+  const nodeMetaByKey = React.useMemo(() => {
+    const map = new Map<string, { parent: string | null; hasChildren: boolean; data?: { elementId?: string; elementType?: string } }>();
 
     const walk = (nodes: DataNode[], parent: string | null) => {
       nodes.forEach((node) => {
         if (typeof node.key === 'string') {
-          map.set(node.key, parent);
+          const data = (node as any)?.data as { elementId?: string; elementType?: string } | undefined;
+          const hasChildren = Boolean(node.children && node.children.length > 0);
+          map.set(node.key, { parent, hasChildren, data });
           if (node.children) walk(node.children, node.key);
         }
       });
@@ -1926,6 +1937,12 @@ const ExplorerTree: React.FC = () => {
     walk(treeData, null);
     return map;
   }, [treeData]);
+
+  const parentByKey = React.useMemo(() => {
+    const map = new Map<string, string | null>();
+    nodeMetaByKey.forEach((meta, key) => map.set(key, meta.parent));
+    return map;
+  }, [nodeMetaByKey]);
 
   const activePathAncestors = React.useMemo(() => {
     const selected = selectedKeysFromContext[0];
@@ -1942,6 +1959,51 @@ const ExplorerTree: React.FC = () => {
 
     return ancestors;
   }, [parentByKey, selectedKeysFromContext]);
+
+  const toggleExpandedKey = React.useCallback((key: string, force?: 'expand' | 'collapse') => {
+    setExpandedKeys((prev) => {
+      const next = new Set(prev);
+      const isExpanded = next.has(key);
+      const shouldExpand = force ? force === 'expand' : !isExpanded;
+      if (shouldExpand) next.add(key);
+      else next.delete(key);
+      return Array.from(next);
+    });
+  }, []);
+
+  const handleTreeKeyDown = React.useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>) => {
+      const selected = selectedKeysFromContext[0];
+      if (typeof selected !== 'string') return;
+
+      if (event.key === 'ArrowRight') {
+        const meta = nodeMetaByKey.get(selected);
+        if (meta?.hasChildren && !expandedKeys.includes(selected)) {
+          toggleExpandedKey(selected, 'expand');
+          event.preventDefault();
+        }
+      }
+
+      if (event.key === 'ArrowLeft') {
+        if (expandedKeys.includes(selected)) {
+          toggleExpandedKey(selected, 'collapse');
+          event.preventDefault();
+        } else {
+          const parent = parentByKey.get(selected);
+          if (parent) {
+            setSelection({ kind: 'repository', keys: [parent] });
+            event.preventDefault();
+          }
+        }
+      }
+
+      if (event.key === 'Enter') {
+        openForKey(selected, { openMode: 'replace' });
+        event.preventDefault();
+      }
+    },
+    [expandedKeys, nodeMetaByKey, openForKey, parentByKey, selectedKeysFromContext, setSelection, toggleExpandedKey],
+  );
 
   const handleDrop: TreeProps['onDrop'] = React.useCallback(
     (info) => {
@@ -2769,12 +2831,6 @@ const ExplorerTree: React.FC = () => {
       if (key.startsWith('explorer:view:')) {
         const viewId = key.replace('explorer:view:', '').trim();
         if (viewId) {
-          if (studioMode) {
-            setSelectedElement(null);
-            setSelection({ kind: 'none', keys: [] });
-            requestStudioViewSwitch(viewId, { openMode: opts?.openMode ?? 'replace' });
-            return;
-          }
           openRouteTab(`/views/${viewId}`);
         }
         return;
@@ -2784,7 +2840,7 @@ const ExplorerTree: React.FC = () => {
         const id = normalizeElementKey(key);
         const obj = eaRepository?.objects.get(id);
         if (!obj) return;
-        openPropertiesPanel({ elementId: obj.id, elementType: obj.type, dock: 'right', readOnly: false });
+        openPropertiesPanel({ elementId: obj.id, elementType: obj.type, dock: 'right', readOnly: true });
         return;
       }
 
@@ -2798,10 +2854,8 @@ const ExplorerTree: React.FC = () => {
       openPropertiesPanel,
       openRouteTab,
       openWorkspaceTab,
-      requestStudioViewSwitch,
       setSelectedElement,
       setSelection,
-      studioMode,
     ],
   );
 
@@ -2857,15 +2911,6 @@ const ExplorerTree: React.FC = () => {
       if (key === BUSINESS_UNIT_ENTERPRISE_PLACEHOLDER_KEY) {
         return withMenuOnClick([
             {
-              key: 'create',
-              icon: <PlusOutlined />,
-              label: 'Create in Toolbox',
-              disabled: true,
-              onClick: () => {
-                message.info('Create new elements from the EA Toolbox.');
-              },
-            },
-            {
               key: 'open',
               label: 'Open Enterprises Catalog',
               onClick: () => openWorkspaceTab({ type: 'catalog', catalog: 'enterprises' }),
@@ -2897,67 +2942,7 @@ const ExplorerTree: React.FC = () => {
 
       const createTypes = collectionToCreateTypes[key];
       if (createTypes) {
-        const canCreateElement = !isReadOnlyMode && hasRepositoryPermission(userRole, 'createElement');
-        const canImport = !isReadOnlyMode && hasRepositoryPermission(userRole, 'import');
-        const canBulkEdit = !isReadOnlyMode && hasRepositoryPermission(userRole, 'bulkEdit');
-        const csvEntityForType: Partial<Record<ObjectType, string>> = {
-          Capability: 'Capabilities',
-          BusinessProcess: 'BusinessProcesses',
-          Application: 'Applications',
-          Technology: 'Technologies',
-          Programme: 'Programmes',
-        };
-        const csvEntity = csvEntityForType[createTypes[0]];
-        const createLabel = 'Create in Toolbox';
-        const importLabel = canImport ? 'Import (CSV / Excel)' : readOnlyLabel('Import (CSV / Excel)');
-        const bulkLabel = canBulkEdit ? 'Bulk Edit' : readOnlyLabel('Bulk Edit');
-
-        const createDisabled = true;
-        const importDisabled = !canImport;
-        const bulkDisabled = !canBulkEdit;
-
         const items = [
-            {
-              key: 'create',
-              icon: <PlusOutlined />,
-              label: createLabel,
-              disabled: createDisabled,
-              onClick: () => {
-                message.info('Create new elements from the EA Toolbox.');
-              },
-            },
-          {
-            key: 'import',
-            label: importLabel,
-            disabled: importDisabled,
-            onClick: () => {
-              if (!canImport) {
-                permissionGuard('import');
-                return;
-              }
-              const target = csvEntity ? `/interoperability?csvEntity=${encodeURIComponent(csvEntity)}` : '/interoperability';
-              openRouteTab(target);
-              message.info(csvEntity ? `Opening Import Wizard for ${titleForObjectType(createType)}.` : 'Opening Import Wizard.');
-            },
-          },
-          {
-            key: 'bulk',
-            label: bulkLabel,
-            disabled: bulkDisabled,
-            onClick: () => {
-              if (!canBulkEdit) {
-                permissionGuard('bulkEdit');
-                return;
-              }
-              const target = csvEntity ? `/interoperability?csvEntity=${encodeURIComponent(csvEntity)}` : '/interoperability';
-              openRouteTab(target);
-              message.info(
-                csvEntity
-                  ? `Opening Import Wizard for bulk updates to ${titleForObjectType(createType)}.`
-                  : 'Opening Import Wizard for bulk updates.',
-              );
-            },
-          },
           {
             key: 'refresh',
             label: 'Refresh',
@@ -2989,62 +2974,17 @@ const ExplorerTree: React.FC = () => {
         return withMenuOnClick(items);
       }
 
-      // Element: Open Properties / Duplicate / Delete
+      // Element: Open Properties / Impact Analysis
       if (key.startsWith('explorer:element:')) {
         const id = normalizeElementKey(key);
         const obj = eaRepository?.objects.get(id);
-        const isBusinessUnitRootEnterprise =
-          metadata?.architectureScope === 'Business Unit' && obj?.type === 'Enterprise';
-        const canCreateRelationship = !isReadOnlyMode && hasRepositoryPermission(userRole, 'createRelationship');
-        const canEditView = !isReadOnlyMode && hasRepositoryPermission(userRole, 'editView');
-        const canCreateElement = !isReadOnlyMode && hasRepositoryPermission(userRole, 'createElement');
-        const canDeleteElement = !isReadOnlyMode && hasRepositoryPermission(userRole, 'deleteElement');
-        const relationshipDisabled = !canCreateRelationship;
-        const addToViewDisabled = !canEditView;
-        const duplicateDisabled = !canCreateElement;
-        const deleteDisabled = isBusinessUnitRootEnterprise || !canDeleteElement;
         return withMenuOnClick([
             {
               key: 'open',
               label: 'Open Properties',
               onClick: () => {
                 if (!obj) return;
-                openPropertiesPanel({ elementId: obj.id, elementType: obj.type, dock: 'right', readOnly: false });
-              },
-            },
-            {
-              key: 'rel',
-              label: 'Create Relationship',
-              disabled: relationshipDisabled,
-              onClick: () => {
-                if (!obj) return;
-                if (relationshipDisabled) {
-                  message.warning('Read-only mode: relationship creation is disabled.');
-                  return;
-                }
-                setRelationshipSource({ id: obj.id, type: obj.type, name: nameForObject(obj) });
-                setSelectedRelationshipType('');
-                setSelectedTargetId('');
-                setRelationshipModalOpen(true);
-              },
-            },
-            {
-              key: 'addToView',
-              label: 'Add to View',
-              disabled: addToViewDisabled,
-              onClick: () => {
-                if (!obj) return;
-                if (addToViewDisabled) {
-                  message.warning('Read-only mode: view updates are disabled.');
-                  return;
-                }
-                if (savedViews.length === 0) {
-                  message.warning('No saved views available. Create a view first.');
-                  return;
-                }
-                setAddToViewTarget({ id: obj.id, name: nameForObject(obj), type: obj.type });
-                setAddToViewViewId((prev) => prev || savedViews[0]?.id || '');
-                setAddToViewModalOpen(true);
+                openPropertiesPanel({ elementId: obj.id, elementType: obj.type, dock: 'right', readOnly: true });
               },
             },
             {
@@ -3056,43 +2996,12 @@ const ExplorerTree: React.FC = () => {
                 openWorkspaceTab({ type: 'impact-element', elementId: obj.id, elementName: name, elementType: obj.type });
               },
             },
-            {
-              key: 'dup',
-              label: 'Duplicate',
-              disabled: duplicateDisabled,
-              onClick: () => {
-                if (!obj) return;
-                if (duplicateDisabled) {
-                  message.warning('Read-only mode: duplication is disabled.');
-                  return;
-                }
-                duplicateObject(obj.id);
-              },
-            },
-            {
-              key: 'del',
-              icon: <DeleteOutlined />,
-              danger: true,
-              label: 'Delete',
-              disabled: deleteDisabled,
-              onClick: () => {
-                if (!obj) return;
-                if (deleteDisabled) {
-                  message.warning('Read-only mode: deletion is disabled.');
-                  return;
-                }
-                deleteObject(obj.id);
-              },
-            },
           ]);
       }
 
-      // View: Open / Delete
+      // View: Open / Export
       if (key.startsWith('explorer:view:')) {
         const viewId = key.replace('explorer:view:', '').trim();
-        const view = ViewStore.get(viewId);
-        const deleteViewDisabled = !(userRole === 'Owner' || view?.createdBy === actor);
-        const editViewDisabled = !canEditView;
         return withMenuOnClick(
           [
             {
@@ -3121,20 +3030,6 @@ const ExplorerTree: React.FC = () => {
                 ]
               : []),
             {
-              key: 'rename',
-              label: 'Rename',
-              icon: <EditOutlined />,
-              disabled: editViewDisabled,
-              onClick: () => renameView(viewId),
-            },
-            {
-              key: 'duplicate',
-              label: 'Duplicate',
-              icon: <PlusSquareOutlined />,
-              disabled: editViewDisabled,
-              onClick: () => duplicateView(viewId),
-            },
-            {
               key: 'export-png',
               label: 'Export PNG',
               onClick: () => exportView(viewId, 'png'),
@@ -3143,14 +3038,6 @@ const ExplorerTree: React.FC = () => {
               key: 'export-json',
               label: 'Export JSON',
               onClick: () => exportView(viewId, 'json'),
-            },
-            {
-              key: 'delete',
-              icon: <DeleteOutlined />,
-              danger: true,
-              label: deleteViewDisabled ? 'Delete View (creator/owner only)' : 'Delete View',
-              disabled: deleteViewDisabled,
-              onClick: () => deleteView(viewId),
             },
           ],
         );
@@ -3233,7 +3120,6 @@ const ExplorerTree: React.FC = () => {
       setBaselinePreviewOpen,
       setShowTechnologyFlag,
       showTechnologyInProgrammeScope,
-      updateViewRoot,
       userRole,
       views,
     ],
@@ -3259,20 +3145,13 @@ const ExplorerTree: React.FC = () => {
           style={{ marginBottom: 12 }}
         />
       ) : null}
-      {isReadOnlyMode ? (
-        <Typography.Text type="warning" style={{ display: 'block', marginBottom: 8 }}>
-          Read-only mode: navigation only. Create, rename, and delete actions are disabled.
-        </Typography.Text>
-      ) : null}
-      <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>
-        Create new elements from the EA Toolbox. Drag elements from Explorer to reuse them on the canvas.
-      </Typography.Text>
+      {null}
       <Tree
         virtual
         height={treeHeight}
-        itemHeight={34}
+        itemHeight={24}
         showIcon
-        showLine={{ showLeafIcon: false }}
+        showLine={false}
         blockNode
         draggable={false}
         selectable
@@ -3281,14 +3160,18 @@ const ExplorerTree: React.FC = () => {
         onExpand={(next) => setExpandedKeys(next)}
         selectedKeys={selectedKeysFromContext}
         treeData={treeData}
-        switcherIcon={({ expanded }) => (expanded ? <CaretDownOutlined /> : <CaretRightOutlined />)}
-        showIcon={false}
+        motion={null}
+        switcherIcon={({ expanded, isLeaf }) => (
+          isLeaf
+            ? <span className={styles.explorerTreeSpacer} />
+            : <span className={styles.explorerTreeToggle}>{expanded ? '-' : '+'}</span>
+        )}
+        onKeyDown={handleTreeKeyDown}
         titleRender={(node) => {
           const k = typeof node.key === 'string' ? node.key : '';
           const isPathAncestor = typeof node.key === 'string' && activePathAncestors.has(node.key);
           const data = (node as any)?.data as { elementId?: string; elementType?: string } | undefined;
           const obj = data?.elementId ? eaRepository?.objects.get(data.elementId) : undefined;
-          const modelingState = modelingStateForObject(obj ?? null);
           const frameworkTags = frameworksForObject(obj);
           const canDrag = Boolean((node as any)?.data?.elementId && (node as any)?.data?.elementType);
           const handleDragStart = (event: React.DragEvent<HTMLSpanElement>) => {
@@ -3302,23 +3185,24 @@ const ExplorerTree: React.FC = () => {
             event.dataTransfer.effectAllowed = 'copy';
             event.dataTransfer.dropEffect = 'copy';
           };
-          const stateTag = modelingState ? (
-            <Tag key={`state-${modelingState}`} color={MODELING_STATE_TAGS[modelingState].color}>
-              {MODELING_STATE_TAGS[modelingState].label}
-            </Tag>
-          ) : null;
           return (
             <Dropdown trigger={['contextMenu']} menu={menuForKey(k)}>
               <span
                 className={isPathAncestor ? styles.pathActive : undefined}
                 draggable={canDrag}
                 onDragStart={handleDragStart}
+                onDoubleClick={(event) => {
+                  if (!k) return;
+                  const meta = nodeMetaByKey.get(k);
+                  if (!meta?.hasChildren) return;
+                  event.stopPropagation();
+                  toggleExpandedKey(k);
+                }}
                 title={canDrag ? 'Drag to canvas to reuse this element' : undefined}
               >
-                {stateTag || frameworkTags.length > 0 ? (
+                {frameworkTags.length > 0 ? (
                   <Space size={6}>
-                    <span>{node.title as any}</span>
-                    {stateTag}
+                    <span className={styles.explorerTreeLabel}>{node.title as any}</span>
                     {frameworkTags.map((tag) => (
                       <Tag key={tag} color="blue">
                         {tag}
@@ -3326,7 +3210,7 @@ const ExplorerTree: React.FC = () => {
                     ))}
                   </Space>
                 ) : (
-                  <span>{node.title as any}</span>
+                  <span className={styles.explorerTreeLabel}>{node.title as any}</span>
                 )}
               </span>
             </Dropdown>

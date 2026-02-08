@@ -1,5 +1,5 @@
 import React from 'react';
-import { Alert, Button, Card, Divider, Form, Select, Space, Typography, message } from 'antd';
+import { Alert, Button, Card, Divider, Form, Select, Space, Typography } from 'antd';
 
 import type { BaseArchitectureElement } from '../../../backend/repository/BaseArchitectureElement';
 import { RELATIONSHIP_ENDPOINT_RULES } from '../../../backend/relationships/RelationshipSemantics';
@@ -14,6 +14,7 @@ import {
 import { getAllRelationships } from '@/services/ea/relationships';
 import { createAnalysisResult } from '@/analysis/analysisResultsStore';
 import { useIdeShell } from './index';
+import { message } from '@/ea/eaConsole';
 
 type ElementOption = {
   id: string;

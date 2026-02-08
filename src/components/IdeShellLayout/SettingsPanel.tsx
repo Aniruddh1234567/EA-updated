@@ -1,8 +1,9 @@
 import React from 'react';
-import { Button, Tag } from 'antd';
+import { Tag } from 'antd';
 
 import { dispatchIdeCommand } from '@/ide/ideCommands';
 import { ENABLE_RBAC } from '@/repository/accessControl';
+import { message } from '@/ea/eaConsole';
 
 const SettingsPanel: React.FC = () => {
   return (
@@ -22,7 +23,7 @@ const SettingsPanel: React.FC = () => {
         <a
           onClick={() => {
             dispatchIdeCommand({ type: 'view.resetLayout' });
-            message.success('Layout reset.');
+            message.success({ content: 'Layout reset.', domain: 'system' });
           }}
         >
           Reset layout

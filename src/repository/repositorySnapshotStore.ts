@@ -6,7 +6,7 @@ import type { DesignWorkspace } from '@/ea/DesignWorkspaceStore';
 export const REPOSITORY_SNAPSHOT_STORAGE_KEY = 'ea.repository.snapshot.v1';
 
 export type RepositoryStudioState = {
-  viewLayouts?: Record<string, Record<string, { x: number; y: number }>>;
+  viewLayouts?: Record<string, Record<string, { x: number; y: number; width?: number; height?: number }>>;
   designWorkspaces?: DesignWorkspace[];
 };
 

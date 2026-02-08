@@ -22,10 +22,18 @@ export type EaShapeRegistryEntry = {
   };
 };
 
-const ARCHIMATE_BASE_PATH = '/archimate-symbols';
-const DRAWIO_BASE_PATH = '/drawio-libs/libs/arista';
-const svgPath = (fileName: string) => `${ARCHIMATE_BASE_PATH}/${encodeURIComponent(fileName)}`;
-const drawioPath = (fileName: string) => `${DRAWIO_BASE_PATH}/${encodeURIComponent(fileName)}`;
+const archimateContext = (require as { context: Function }).context(
+  '../assets/vendor/archimate-symbols',
+  false,
+  /\.(svg|png)$/,
+);
+const drawioContext = (require as { context: Function }).context(
+  '../assets/vendor/drawio-libs/libs/arista',
+  false,
+  /\.svg$/,
+);
+const svgPath = (fileName: string) => archimateContext(`./${fileName}`) as string;
+const drawioPath = (fileName: string) => drawioContext(`./${fileName}`) as string;
 
 const DEFAULT_STYLE: EaShapeVisualStyle = {
   width: 180,

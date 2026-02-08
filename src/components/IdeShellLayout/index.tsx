@@ -17,9 +17,10 @@ import {
 } from '@ant-design/icons';
 import { ProCard } from '@ant-design/pro-components';
 import { history, useLocation, useModel } from '@umijs/max';
-import { Alert, Avatar, Button, Collapse, Descriptions, Empty, Input, Layout, Modal, Radio, Space, Tabs, Tag, Tooltip, Typography, message, theme } from 'antd';
+import { Alert, Avatar, Button, Collapse, Descriptions, Empty, Input, Layout, Modal, Radio, Space, Tabs, Tag, Tooltip, Typography, theme } from 'antd';
 import React from 'react';
 import styles from './style.module.less';
+import EAConsolePanel from '@/components/EAConsole/EAConsolePanel';
 import CatalogTableTab, { titleForCatalogKind, type CatalogKind } from './CatalogTableTab';
 import ObjectTableTab from './ObjectTableTab';
 import AnalysisTab, { type AnalysisKind } from './AnalysisTab';
@@ -35,6 +36,7 @@ import { getBaselineById } from '../../../backend/baselines/BaselineStore';
 import { getPlateauById } from '../../../backend/roadmap/PlateauStore';
 import { getRoadmapById } from '../../../backend/roadmap/RoadmapStore';
 import IdeMenuBar from '@/components/IdeMenuBar/IdeMenuBar';
+import { useAppTheme } from '@/theme/ThemeContext';
 import logoUrl from '../../../logo.png';
 import aiLogoUrl from '../../../AI logo Foriday.webm';
 import { getViewRepository } from '../../../backend/views/ViewRepositoryStore';
@@ -51,6 +53,7 @@ import { ViewStore } from '@/diagram-studio/view-runtime/ViewStore';
 import type { ViewInstance } from '@/diagram-studio/viewpoints/ViewInstance';
 import { ViewpointRegistry } from '@/diagram-studio/viewpoints/ViewpointRegistry';
 import { resolveViewScope } from '@/diagram-studio/viewpoints/resolveViewScope';
+import { message } from '@/ea/eaConsole';
 
 type ActivityKey =
   | 'explorer'
@@ -73,6 +76,39 @@ type PanelDock = 'bottom' | 'right';
 const TOP_MENU_BAR_HEIGHT_WEB = 44;
 const TOP_MENU_BAR_HEIGHT_DESKTOP = 34;
 const STATUS_BAR_HEIGHT = 22;
+
+// ---------------------------------------------------------------------------
+// Theme toggle button — tiny, icon-only, no-drag for Electron titlebar
+// ---------------------------------------------------------------------------
+const ThemeToggleButton: React.FC = () => {
+  const { isDark, toggleTheme } = useAppTheme();
+  return (
+    <Tooltip title={isDark ? 'Switch to Light theme' : 'Switch to Dark theme'}>
+      <button
+        type="button"
+        onClick={toggleTheme}
+        aria-label="Toggle theme"
+        style={{
+          WebkitAppRegion: 'no-drag',
+          background: 'transparent',
+          border: 'none',
+          cursor: 'pointer',
+          padding: '2px 6px',
+          fontSize: 15,
+          lineHeight: 1,
+          color: 'inherit',
+          opacity: 0.85,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        } as React.CSSProperties}
+      >
+        {isDark ? '☀️' : '🌙'}
+      </button>
+    </Tooltip>
+  );
+};
+
 
 // VS Code-like defaults (not ultra-compact).
 const ACTIVITY_BAR_WIDTH_WEB = 68;
@@ -242,7 +278,7 @@ const createViewWorkspace = (args: {
     createdAt: args.view.createdAt ?? now,
     updatedAt: now,
     repositoryUpdatedAt: args.repositoryUpdatedAt,
-    mode: 'STANDARD',
+    mode: 'ITERATIVE',
     stagedElements: [],
     stagedRelationships: [],
     layout: { nodes: [], edges: [] },
@@ -468,7 +504,7 @@ const IdeShellLayout: React.FC<IdeShellLayoutProps> = ({ sidebars, children, she
       createdAt: now,
       updatedAt: now,
       repositoryUpdatedAt: metadata?.updatedAt,
-      mode: 'STANDARD',
+      mode: 'ITERATIVE',
       stagedElements: [],
       stagedRelationships: [],
       layout: { nodes: [], edges: [] },
@@ -497,7 +533,7 @@ const IdeShellLayout: React.FC<IdeShellLayoutProps> = ({ sidebars, children, she
         createdAt: now,
         updatedAt: now,
         repositoryUpdatedAt: metadata?.updatedAt,
-        mode: 'STANDARD',
+        mode: 'ITERATIVE',
         stagedElements: [],
         stagedRelationships: [],
         layout: {
@@ -518,16 +554,17 @@ const IdeShellLayout: React.FC<IdeShellLayoutProps> = ({ sidebars, children, she
 
   React.useEffect(() => {
     const onStudioViewOpen = (event: Event) => {
-      const e = event as CustomEvent<{ viewId?: string; readOnly?: boolean; replay?: boolean }>;
+      const e = event as CustomEvent<{ viewId?: string; view?: ViewInstance; readOnly?: boolean; replay?: boolean }>
+      ;
       if (e.detail?.replay) return;
-      const viewId = (e.detail?.viewId ?? '').trim();
+      const viewId = (e.detail?.viewId ?? e.detail?.view?.id ?? '').trim();
       if (!viewId) return;
       if (!canEnterStudio()) return;
       if (studioMode) return;
       setStudioMode(true);
       setPanelMode('properties');
       setPropertiesReadOnly(false);
-      setPendingStudioViewOpen({ viewId, readOnly: e.detail?.readOnly });
+      setPendingStudioViewOpen({ viewId, readOnly: e.detail?.readOnly, view: e.detail?.view ?? null });
     };
 
     window.addEventListener('ea:studio.view.open', onStudioViewOpen as EventListener);
@@ -540,8 +577,8 @@ const IdeShellLayout: React.FC<IdeShellLayoutProps> = ({ sidebars, children, she
 
   React.useEffect(() => {
     if (!studioMode || !pendingStudioViewOpen) return;
-    const { viewId, readOnly } = pendingStudioViewOpen;
-    const view = ViewStore.get(viewId) ?? null;
+    const { viewId, readOnly, view: pendingView } = pendingStudioViewOpen;
+    const view = pendingView ?? ViewStore.get(viewId) ?? null;
     if (view) {
       const nextWorkspace = createViewWorkspace({
         view,
@@ -559,6 +596,7 @@ const IdeShellLayout: React.FC<IdeShellLayoutProps> = ({ sidebars, children, she
         new CustomEvent('ea:studio.view.open', {
           detail: {
             viewId,
+            view,
             readOnly,
             openMode: 'new',
             replay: true,
@@ -585,8 +623,15 @@ const IdeShellLayout: React.FC<IdeShellLayoutProps> = ({ sidebars, children, she
       // Use the text hover/active background tokens, which are designed to be subtle and neutral.
       ['--ide-tree-hover-bg' as any]: token.colorBgTextHover,
       ['--ide-tree-selected-bg' as any]: (token as any).colorBgTextActive ?? token.colorBgTextHover,
-      ['--ide-tree-accent' as any]: token.colorBorderSecondary,
-      ['--ide-tree-line' as any]: token.colorBorderSecondary,
+      ['--ide-tree-text' as any]: token.colorText,
+      ['--ide-tree-muted' as any]: token.colorTextTertiary,
+      ['--ide-tree-accent' as any]: token.colorTextSecondary,
+      ['--ide-tree-line' as any]: token.colorBorder,
+      ['--ide-text' as any]: token.colorText,
+      ['--ide-text-secondary' as any]: token.colorTextSecondary,
+      ['--ide-text-tertiary' as any]: token.colorTextTertiary,
+      ['--ide-fill-secondary' as any]: token.colorFillSecondary,
+      ['--ide-bg-elevated' as any]: token.colorBgElevated,
       ['--ide-topbar-height' as any]: isDesktop
         ? 'env(titlebar-area-height, 34px)'
         : `${topMenuBarHeight}px`,
@@ -657,13 +702,13 @@ const IdeShellLayout: React.FC<IdeShellLayoutProps> = ({ sidebars, children, she
   });
   const [tabs, setTabs] = React.useState<TabItem[]>([]);
   const [activeKey, setActiveKey] = React.useState<string | null>(null);
-  const [panelMode, setPanelMode] = React.useState<'properties' | 'agent'>('properties');
+  const [panelMode, setPanelMode] = React.useState<'properties' | 'agent' | 'console'>('properties');
   const [studioMode, setStudioMode] = React.useState(false);
   const [activeWorkspace, setActiveWorkspace] = React.useState<DesignWorkspace | null>(null);
   const [pendingStudioViewSwitchId, setPendingStudioViewSwitchId] = React.useState<string | null>(null);
   const [viewSwitchMode, setViewSwitchMode] = React.useState<'read' | 'edit'>(canEditView ? 'edit' : 'read');
   const [pendingStudioViewOpen, setPendingStudioViewOpen] = React.useState<
-    { viewId: string; readOnly?: boolean } | null
+    { viewId: string; readOnly?: boolean; view?: ViewInstance | null } | null
   >(null);
   const hierarchyEditingEnabled = React.useMemo(() => {
     if (!activeKey) return true;
@@ -779,7 +824,7 @@ const IdeShellLayout: React.FC<IdeShellLayoutProps> = ({ sidebars, children, she
 
   React.useEffect(() => {
     if (!studioMode) return;
-    if (panelMode !== 'properties') setPanelMode('properties');
+    if (panelMode !== 'properties' && panelMode !== 'console') setPanelMode('properties');
   }, [panelMode, studioMode]);
 
   React.useEffect(() => {
@@ -850,7 +895,12 @@ const IdeShellLayout: React.FC<IdeShellLayoutProps> = ({ sidebars, children, she
     if (!studioMode) return;
     const list = DesignWorkspaceStore.list(repositoryName);
     if (list.length > 0) {
-      setActiveWorkspace(list[0]);
+      const candidate = list[0];
+      const normalized = candidate.mode === 'ITERATIVE'
+        ? candidate
+        : { ...candidate, mode: 'ITERATIVE' as const, updatedAt: new Date().toISOString() };
+      if (normalized !== candidate) DesignWorkspaceStore.save(repositoryName, normalized);
+      setActiveWorkspace(normalized);
       return;
     }
     const created = createDefaultWorkspace();
@@ -876,7 +926,12 @@ const IdeShellLayout: React.FC<IdeShellLayoutProps> = ({ sidebars, children, she
       DesignWorkspaceStore.remove(repositoryName, workspaceId);
       const list = DesignWorkspaceStore.list(repositoryName);
       if (list.length > 0) {
-        setActiveWorkspace(list[0]);
+        const candidate = list[0];
+        const normalized = candidate.mode === 'ITERATIVE'
+          ? candidate
+          : { ...candidate, mode: 'ITERATIVE' as const, updatedAt: new Date().toISOString() };
+        if (normalized !== candidate) DesignWorkspaceStore.save(repositoryName, normalized);
+        setActiveWorkspace(normalized);
         return;
       }
       const created = createDefaultWorkspace();
@@ -1409,7 +1464,8 @@ const IdeShellLayout: React.FC<IdeShellLayoutProps> = ({ sidebars, children, she
             style={{ width: 400 }}
           />
         </div>
-        <div style={{ paddingInline: 10, display: 'flex', justifyContent: 'flex-end', gap: 8, minWidth: 0 }}>
+        <div style={{ paddingInline: 10, display: 'flex', justifyContent: 'flex-end', gap: 8, minWidth: 0, alignItems: 'center' }}>
+          <ThemeToggleButton />
           {isDesktop && (
             <Typography.Text
               type="secondary"
@@ -1636,32 +1692,29 @@ const IdeShellLayout: React.FC<IdeShellLayoutProps> = ({ sidebars, children, she
   }, [activeElement?.attributes, activeElement?.id, activeElementId]);
 
   const renderPanelBody = React.useCallback(() => {
-    if (panelMode === 'properties') {
-      if (!activeElementId || !activeElementType) {
-        return (
-          <div className={styles.bottomPanelBody}>
-            <WorkspaceEmptyState
-              title="No element selected"
-              description="Select an element, then choose Open Properties."
-            />
-          </div>
-        );
-      }
-      return (
-        <div className={styles.bottomPanelBody}>
+    const propertiesBody = !activeElementId || !activeElementType
+      ? (
+          <WorkspaceEmptyState
+            title="No element selected"
+            description="Select an element, then choose Open Properties."
+          />
+        )
+      : (
           <ObjectTableTab
             id={activeElementId}
             name={activeElementName || activeElementId}
             objectType={activeElementType}
             readOnly={propertiesReadOnly}
           />
-        </div>
-      );
-    }
+        );
 
     return (
       <div className={styles.bottomPanelBody}>
-        <ArchitectureAgentPanel />
+        <div style={{ display: panelMode === 'console' ? 'block' : 'none', height: '100%' }}>
+          <EAConsolePanel />
+        </div>
+        {panelMode === 'properties' ? propertiesBody : null}
+        {panelMode === 'agent' ? <ArchitectureAgentPanel /> : null}
       </div>
     );
   }, [activeElementId, activeElementName, activeElementType, panelMode, propertiesReadOnly]);
@@ -2137,7 +2190,7 @@ const IdeShellLayout: React.FC<IdeShellLayoutProps> = ({ sidebars, children, she
                   )}
                 </div>
 
-                {!studioMode && panelDock === 'right' && bottomPanelOpen && (
+                {panelDock === 'right' && bottomPanelOpen && (!studioMode || panelMode === 'console') && (
                 <>
                   <div
                     className={styles.rightResizer}
@@ -2156,9 +2209,29 @@ const IdeShellLayout: React.FC<IdeShellLayoutProps> = ({ sidebars, children, she
                     >
                       <div className={styles.bottomPanelHeader}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                          <Typography.Text className={styles.bottomPanelTitle} type="secondary">
-                            {panelMode === 'properties' ? 'Properties' : 'Architecture Agent'}
-                          </Typography.Text>
+                          <div className={styles.panelTabs}>
+                            <button
+                              type="button"
+                              className={panelMode === 'properties' ? styles.panelTabActive : styles.panelTab}
+                              onClick={() => setPanelMode('properties')}
+                            >
+                              Properties
+                            </button>
+                            <button
+                              type="button"
+                              className={panelMode === 'agent' ? styles.panelTabActive : styles.panelTab}
+                              onClick={() => setPanelMode('agent')}
+                            >
+                              Architecture Agent
+                            </button>
+                            <button
+                              type="button"
+                              className={panelMode === 'console' ? styles.panelTabActive : styles.panelTab}
+                              onClick={() => setPanelMode('console')}
+                            >
+                              EA Console
+                            </button>
+                          </div>
                           {panelMode === 'properties' && (
                             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                               {activeElementId
@@ -2195,12 +2268,18 @@ const IdeShellLayout: React.FC<IdeShellLayoutProps> = ({ sidebars, children, she
                 </>
               )}
 
-              {!studioMode && panelDock === 'right' && !bottomPanelOpen && (
+              {panelDock === 'right' && !bottomPanelOpen && (!studioMode || panelMode === 'console') && (
                 <div className={styles.rightCollapsedBar}>
                   <button
                     type="button"
                     className={styles.iconButton}
-                    aria-label={panelMode === 'properties' ? 'Expand properties panel' : 'Expand architecture agent panel'}
+                    aria-label={
+                      panelMode === 'properties'
+                        ? 'Expand properties panel'
+                        : panelMode === 'agent'
+                          ? 'Expand architecture agent panel'
+                          : 'Expand EA console'
+                    }
                     onClick={() => setBottomPanelOpen(true)}
                     style={{ color: token.colorTextSecondary }}
                   >
@@ -2210,7 +2289,7 @@ const IdeShellLayout: React.FC<IdeShellLayoutProps> = ({ sidebars, children, she
               )}
             </div>
 
-            {!studioMode && panelDock === 'bottom' && bottomPanelOpen && (
+            {panelDock === 'bottom' && bottomPanelOpen && (!studioMode || panelMode === 'console') && (
               <>
                 <div
                   className={styles.bottomResizer}
@@ -2229,9 +2308,29 @@ const IdeShellLayout: React.FC<IdeShellLayoutProps> = ({ sidebars, children, she
                 >
                   <div className={styles.bottomPanelHeader}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                      <Typography.Text className={styles.bottomPanelTitle} type="secondary">
-                        {panelMode === 'properties' ? 'Properties' : 'Architecture Agent'}
-                      </Typography.Text>
+                      <div className={styles.panelTabs}>
+                        <button
+                          type="button"
+                          className={panelMode === 'properties' ? styles.panelTabActive : styles.panelTab}
+                          onClick={() => setPanelMode('properties')}
+                        >
+                          Properties
+                        </button>
+                        <button
+                          type="button"
+                          className={panelMode === 'agent' ? styles.panelTabActive : styles.panelTab}
+                          onClick={() => setPanelMode('agent')}
+                        >
+                          Architecture Agent
+                        </button>
+                        <button
+                          type="button"
+                          className={panelMode === 'console' ? styles.panelTabActive : styles.panelTab}
+                          onClick={() => setPanelMode('console')}
+                        >
+                          EA Console
+                        </button>
+                      </div>
                       {panelMode === 'properties' && (
                         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                           {activeElementId
@@ -2268,12 +2367,18 @@ const IdeShellLayout: React.FC<IdeShellLayoutProps> = ({ sidebars, children, she
               </>
             )}
 
-            {!studioMode && panelDock === 'bottom' && !bottomPanelOpen && (
+            {panelDock === 'bottom' && !bottomPanelOpen && (!studioMode || panelMode === 'console') && (
               <div className={styles.bottomCollapsedBar}>
                 <button
                   type="button"
                   className={styles.iconButton}
-                  aria-label={panelMode === 'properties' ? 'Expand properties panel' : 'Expand architecture agent panel'}
+                  aria-label={
+                    panelMode === 'properties'
+                      ? 'Expand properties panel'
+                      : panelMode === 'agent'
+                        ? 'Expand architecture agent panel'
+                        : 'Expand EA console'
+                  }
                   onClick={() => setBottomPanelOpen(true)}
                   style={{ color: token.colorTextSecondary }}
                 >
@@ -2303,6 +2408,16 @@ const IdeShellLayout: React.FC<IdeShellLayoutProps> = ({ sidebars, children, she
             </Typography.Text>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: token.marginXXS }}>
+              <Button
+                type="text"
+                size="small"
+                icon={<ClusterOutlined />}
+                onClick={() => {
+                  setPanelMode('console');
+                  setBottomPanelOpen(true);
+                  setPanelDock('bottom');
+                }}
+              />
               <Button
                 type="text"
                 size="small"

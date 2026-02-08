@@ -6,9 +6,10 @@ import {
   ProFormTextArea,
 } from '@ant-design/pro-components';
 import { FormattedMessage, useIntl, useRequest } from '@umijs/max';
-import { Button, message } from 'antd';
+import { Button } from 'antd';
 import type { FC } from 'react';
 import { addRule } from '@/services/ant-design-pro/api';
+import { message } from '@/ea/eaConsole';
 
 interface CreateFormProps {
   reload?: ActionType['reload'];

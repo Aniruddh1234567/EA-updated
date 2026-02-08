@@ -1,7 +1,7 @@
 import React from 'react';
 import { v4 as uuid } from 'uuid';
 import { useModel } from '@umijs/max';
-import { Button, Checkbox, Input, List, Menu, Modal, Select, Typography, message, notification } from 'antd';
+import { Button, Checkbox, Input, List, Menu, Modal, Select, Typography } from 'antd';
 import * as XLSX from 'xlsx';
 
 import { useEaRepository } from '@/ea/EaRepositoryContext';
@@ -26,6 +26,7 @@ import type { FrameworkConfig } from '@/repository/repositoryMetadata';
 import { ViewStore } from '@/diagram-studio/view-runtime/ViewStore';
 import { ViewLayoutStore } from '@/diagram-studio/view-runtime/ViewLayoutStore';
 import { DesignWorkspaceStore } from '@/ea/DesignWorkspaceStore';
+import { message } from '@/ea/eaConsole';
 
 import styles from './style.module.less';
 
@@ -214,7 +215,7 @@ const IdeMenuBar: React.FC = () => {
   const { openSeedSampleDataModal } = useSeedSampleData();
 
   const hasRepo = Boolean(eaRepository && metadata);
-  const isReadOnlyMode = (metadata?.governanceMode ?? 'Advisory') === 'Advisory';
+  const isReadOnlyMode = false;
   const selectedEntityId = hasRepo ? parseSelectedEntityId(selection.keys?.[0]) : null;
   const selectedEntityType =
     hasRepo && selectedEntityId ? ((eaRepository?.objects.get(selectedEntityId)?.type ?? null) as string | null) : null;
@@ -541,10 +542,9 @@ const IdeMenuBar: React.FC = () => {
       console.log('[IDE] Importing repository package', { name: file.name, type: file.type, size: file.size });
 
       if (!file.name.toLowerCase().endsWith('.eaproj')) {
-        notification.info({
-          message: 'Unsupported repository package',
-          description: 'Please choose an .eaproj repository package.',
-          placement: 'bottomRight',
+        message.warning({
+          content: 'Unsupported repository package. Please choose an .eaproj repository package.',
+          domain: 'repository',
         });
         return;
       }
@@ -1013,14 +1013,9 @@ const IdeMenuBar: React.FC = () => {
           ],
         });
 
-        Modal.error({
-          title: 'Save blocked by governance (Strict mode)',
-          content: (
-            <div>
-              <div>Fix mandatory attributes and invalid relationships before exporting a snapshot.</div>
-              {renderDetails('Strict')}
-            </div>
-          ),
+        message.error({
+          content: 'Save blocked by governance (Strict mode): Fix mandatory attributes and invalid relationships before exporting a snapshot.',
+          domain: 'governance',
         });
         return;
       }
@@ -1038,16 +1033,9 @@ const IdeMenuBar: React.FC = () => {
             ...debt.invalidRelationshipInserts.slice(0, 3).map((s) => `Relationship insert: ${s.message}`),
           ],
         });
-
-        notification.warning({
-          message: 'Exported with governance warnings (Advisory)',
-          description: (
-            <div>
-              <div>{total} issue(s) detected. Export proceeds in Advisory mode.</div>
-              <div style={{ marginTop: 8 }}>{renderDetails('Advisory')}</div>
-            </div>
-          ),
-          duration: 8,
+        message.warning({
+          content: `Exported with governance warnings (Advisory). ${total} issue(s) detected.`,
+          domain: 'governance',
         });
       }
     } catch {
@@ -1359,10 +1347,9 @@ const IdeMenuBar: React.FC = () => {
   const handleGovernancePlaceholder = React.useCallback((label: string) => {
     console.log('[IDE] Governance >', label);
     dispatchIdeCommand({ type: 'navigation.openRoute', path: '/governance' });
-    notification.info({
-      message: label,
-      description: 'This governance area is scaffolded. Dashboard is available; deeper tools will be wired next.',
-      placement: 'bottomRight',
+    message.info({
+      content: `${label}. This governance area is scaffolded. Dashboard is available; deeper tools will be wired next.`,
+      domain: 'governance',
     });
   }, []);
 
@@ -1476,10 +1463,9 @@ const IdeMenuBar: React.FC = () => {
 
   const handleHelpDocs = React.useCallback(() => {
     console.log('[IDE] Help > Documentation');
-    notification.info({
-      message: 'Documentation link placeholder',
-      description: 'External documentation URL not configured yet.',
-      placement: 'bottomRight',
+    message.info({
+      content: 'Documentation link placeholder. External documentation URL not configured yet.',
+      domain: 'system',
     });
   }, []);
 
@@ -1862,10 +1848,9 @@ const IdeMenuBar: React.FC = () => {
             label: 'CSV Validator',
             onClick: () => {
               console.log('[IDE] Tools > CSV Validator');
-              notification.info({
-                message: 'CSV Validator',
-                description: 'Use File → Import to validate entity-specific CSVs. A dedicated validator UI is planned.',
-                placement: 'bottomRight',
+              message.info({
+                content: 'CSV Validator: use File → Import to validate entity-specific CSVs. A dedicated validator UI is planned.',
+                domain: 'repository',
               });
             },
           },

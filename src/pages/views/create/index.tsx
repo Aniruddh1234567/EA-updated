@@ -1,11 +1,12 @@
 import { PageContainer, ProFormSelect, ProFormText, ProFormTextArea, StepsForm } from '@ant-design/pro-components';
 import { history, useModel } from '@umijs/max';
-import { Button, Card, Divider, Result, Typography, message } from 'antd';
+import { Button, Card, Divider, Result, Typography } from 'antd';
 import React, { useMemo, useState } from 'react';
 
 import { ViewStore } from '@/diagram-studio/view-runtime/ViewStore';
 import { ViewpointRegistry } from '@/diagram-studio/viewpoints/ViewpointRegistry';
 import type { ViewInstance } from '@/diagram-studio/viewpoints/ViewInstance';
+import { message } from '@/ea/eaConsole';
 
 const createViewId = (): string => {
   // Browser-safe unique-enough id for UI-only creation (no persistence).

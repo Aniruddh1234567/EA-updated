@@ -1,5 +1,5 @@
 export type ArchitectureScope = 'Enterprise' | 'Business Unit' | 'Domain' | 'Programme';
-export type ReferenceFramework = 'ArchiMate' | 'TOGAF' | 'Custom';
+export type ReferenceFramework = 'Custom';
 export type GovernanceMode = 'Strict' | 'Advisory';
 export type LifecycleCoverage = 'As-Is' | 'To-Be' | 'Both';
 export type TimeHorizon = 'Current' | '1–3 years' | 'Strategic';
@@ -47,7 +47,7 @@ export const ARCHITECTURE_SCOPES: ArchitectureScope[] = [
   'Programme',
 ];
 
-export const REFERENCE_FRAMEWORKS: ReferenceFramework[] = ['ArchiMate', 'TOGAF', 'Custom'];
+export const REFERENCE_FRAMEWORKS: ReferenceFramework[] = ['Custom'];
 
 export const GOVERNANCE_MODES: GovernanceMode[] = ['Strict', 'Advisory'];
 

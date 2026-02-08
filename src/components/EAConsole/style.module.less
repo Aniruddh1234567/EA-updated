@@ -1,0 +1,126 @@
+.consoleRoot {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--ide-bg-container);
+  color: #1f2937;
+}
+
+.consoleHeader {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--ide-border);
+  background: var(--ide-header-bg);
+}
+
+.filterGroup {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.filterLabel {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.filterSelect {
+  min-width: 160px;
+}
+
+.headerActions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+}
+
+.consoleList {
+  flex: 1 1 auto;
+  overflow: auto;
+  padding: 8px 10px 14px;
+}
+
+.emptyState {
+  color: #6b7280;
+  padding: 20px 8px;
+  font-size: 13px;
+}
+
+.consoleRow {
+  display: grid;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: #f8fafc;
+  margin-bottom: 8px;
+  cursor: pointer;
+}
+
+.consoleRow:hover {
+  border-color: #2563eb;
+  background: #eef2ff;
+}
+
+.rowMeta {
+  display: flex;
+  gap: 10px;
+  font-size: 11px;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.timestamp {
+  color: #6b7280;
+}
+
+.domain {
+  color: #2563eb;
+}
+
+.level {
+  color: #111827;
+}
+
+.rowMessage {
+  font-size: 13px;
+  color: #1f2937;
+}
+
+.rowContext {
+  font-size: 12px;
+  color: #475569;
+}
+
+.levelinfo .level {
+  color: #2563eb;
+}
+
+.levelsuccess .level {
+  color: #16a34a;
+}
+
+.levelwarning .level {
+  color: #d97706;
+}
+
+.levelerror .level {
+  color: #dc2626;
+}
+
+@media (max-width: 960px) {
+  .consoleHeader {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .headerActions {
+    margin-left: 0;
+  }
+}

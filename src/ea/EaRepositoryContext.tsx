@@ -1,6 +1,6 @@
 import React from 'react';
 
-import { Modal, message, notification } from 'antd';
+import { message, notification } from '@/ea/eaConsole';
 
 import { EaRepository, type EaObject, type EaRelationship } from '@/pages/dependency-view/utils/eaRepository';
 import {
@@ -634,7 +634,6 @@ export const EaRepositoryProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const lastSerializedRef = React.useRef<string | null>(initial.raw);
   const suppressHistoryRef = React.useRef(false);
   const lastSaveBlockedKeyRef = React.useRef<string | null>(null);
-  const saveBlockedModalRef = React.useRef<{ destroy: () => void } | null>(null);
   const lastAdvisoryWarnKeyRef = React.useRef<string | null>(null);
   const lastAdvisorySaveWarnKeyRef = React.useRef<string | null>(null);
   const lastAdvisoryGovernanceWarnKeyRef = React.useRef<string | null>(null);
@@ -642,7 +641,6 @@ export const EaRepositoryProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const managedSaveTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const lastStrictActionBlockedKeyRef = React.useRef<string | null>(null);
-  const strictActionBlockedModalRef = React.useRef<{ destroy: () => void } | null>(null);
 
   const ensureActiveRepositoryId = React.useCallback((repositoryName: string) => {
     let id = readLocalStorage(ACTIVE_REPO_ID_KEY);
@@ -839,29 +837,12 @@ export const EaRepositoryProvider: React.FC<{ children: React.ReactNode }> = ({ 
           if (lastStrictActionBlockedKeyRef.current !== strict.violation.key) {
             lastStrictActionBlockedKeyRef.current = strict.violation.key;
 
-            if (strictActionBlockedModalRef.current) {
-              strictActionBlockedModalRef.current.destroy();
-              strictActionBlockedModalRef.current = null;
-            }
-
-            strictActionBlockedModalRef.current = Modal.error({
-              title: 'Save blocked by governance (Strict mode)',
-              content: (
-                <div>
-                  <div>{strict.violation.message}</div>
-                  {strict.violation.highlights.length > 0 ? (
-                    <ul style={{ marginTop: 8, marginBottom: 0, paddingLeft: 18 }}>
-                      {strict.violation.highlights.map((h) => (
-                        <li key={h}>{h}</li>
-                      ))}
-                    </ul>
-                  ) : null}
-                </div>
-              ),
-              okText: 'OK',
-              onOk: () => {
-                strictActionBlockedModalRef.current = null;
-              },
+            const highlightText = strict.violation.highlights.length > 0
+              ? ' | ' + strict.violation.highlights.join('; ')
+              : '';
+            message.error({
+              content: `Save blocked by governance (Strict mode): ${strict.violation.message}${highlightText}`,
+              domain: 'governance',
             });
           }
 
@@ -1091,15 +1072,51 @@ export const EaRepositoryProvider: React.FC<{ children: React.ReactNode }> = ({ 
   }, []);
 
   const clearRepository = React.useCallback(() => {
-    // Clearing is a new history root.
+    // ---------------------------------------------------------------------------
+    // CRITICAL: Flush all pending saves BEFORE clearing state.
+    // Without this, closing a repository cancels the disk-save timer and deletes
+    // localStorage, causing total data loss on reopen.
+    // ---------------------------------------------------------------------------
+
+    // 1. Cancel any pending debounced disk-save timer.
+    if (managedSaveTimerRef.current) {
+      clearTimeout(managedSaveTimerRef.current);
+      managedSaveTimerRef.current = null;
+    }
+
+    // 2. Flush the CURRENT repository state to localStorage + disk BEFORE nulling.
+    if (eaRepository && metadata) {
+      try {
+        const finalSnapshot = serializeRepository(eaRepository, metadata);
+        writeRepositorySnapshot(finalSnapshot);
+      } catch {
+        // Best-effort — don't block close.
+      }
+
+      // Flush to managed desktop file (fire-and-forget).
+      if (typeof window !== 'undefined' && window.eaDesktop?.saveManagedRepository) {
+        try {
+          const payload = buildManagedRepositoryPayload();
+          if (payload) {
+            const repositoryId = ensureActiveRepositoryId(metadata.repositoryName || 'Repository');
+            void window.eaDesktop.saveManagedRepository({ payload, repositoryId });
+          }
+        } catch {
+          // Best-effort — don't block close.
+        }
+      }
+    }
+
+    // 3. Clear history.
     undoStackRef.current = [];
     redoStackRef.current = [];
     setCanUndo(false);
     setCanRedo(false);
 
+    // 4. Clear in-memory state (triggers re-render but localStorage is preserved).
     setEaRepositoryUnsafe(null);
     setMetadata(null);
-  }, []);
+  }, [eaRepository, metadata, buildManagedRepositoryPayload, ensureActiveRepositoryId]);
 
   const applySerialized = React.useCallback((raw: string): boolean => {
     try {
@@ -1174,7 +1191,10 @@ export const EaRepositoryProvider: React.FC<{ children: React.ReactNode }> = ({ 
           clearTimeout(managedSaveTimerRef.current);
           managedSaveTimerRef.current = null;
         }
-        localStorage.removeItem(STORAGE_KEY);
+        // IMPORTANT: Do NOT delete localStorage here.
+        // The snapshot must survive close/reopen cycles.
+        // It will be overwritten when a new/different repository is loaded.
+        // localStorage.removeItem(STORAGE_KEY);  ← removed to prevent data loss
         lastSerializedRef.current = null;
         try {
           localStorage.removeItem(PROJECT_DIRTY_KEY);
@@ -1255,37 +1275,9 @@ export const EaRepositoryProvider: React.FC<{ children: React.ReactNode }> = ({ 
                 highlights: highlights(),
               });
 
-              // Ensure only a single blocking dialog is shown.
-              if (saveBlockedModalRef.current) {
-                saveBlockedModalRef.current.destroy();
-                saveBlockedModalRef.current = null;
-              }
-
-              saveBlockedModalRef.current = Modal.error({
-                title: 'Save blocked by governance (Strict mode)',
-                content: (
-                  <div>
-                    <div>Fix these issues to enable saving:</div>
-                    <ul style={{ marginTop: 8, marginBottom: 0, paddingLeft: 18 }}>
-                      <li>
-                        Mandatory attribute findings: <strong>{mandatoryFindingCount}</strong>
-                      </li>
-                      <li>
-                        Missing lifecycle tags (Both mode): <strong>{lifecycleTagMissingCount}</strong>
-                      </li>
-                      <li>
-                        Invalid relationships: <strong>{invalidRelationshipInsertCount}</strong>
-                      </li>
-                      <li>
-                        Relationship errors: <strong>{relationshipErrorCount}</strong>
-                      </li>
-                    </ul>
-                  </div>
-                ),
-                okText: 'OK',
-                onOk: () => {
-                  saveBlockedModalRef.current = null;
-                },
+              message.error({
+                content: `Save blocked by governance (Strict mode): Mandatory attribute findings: ${mandatoryFindingCount}, Missing lifecycle tags (Both mode): ${lifecycleTagMissingCount}, Invalid relationships: ${invalidRelationshipInsertCount}, Relationship errors: ${relationshipErrorCount}`,
+                domain: 'governance',
               });
             }
             return;
@@ -1293,11 +1285,7 @@ export const EaRepositoryProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
           if (lastSaveBlockedKeyRef.current) {
             lastSaveBlockedKeyRef.current = null;
-            if (saveBlockedModalRef.current) {
-              saveBlockedModalRef.current.destroy();
-              saveBlockedModalRef.current = null;
-            }
-            message.success('Governance compliant: saving re-enabled.');
+            message.success({ content: 'Governance compliant: saving re-enabled.', domain: 'governance' });
           }
         }
 

@@ -1,6 +1,7 @@
 import { readRepositorySnapshot, updateRepositorySnapshot } from '@/repository/repositorySnapshotStore';
 
-export type ViewLayoutPositions = Record<string, { x: number; y: number }>;
+export type ViewNodePosition = { x: number; y: number; width?: number; height?: number };
+export type ViewLayoutPositions = Record<string, ViewNodePosition>;
 
 const LEGACY_PREFIX = 'ea.view.layout.positions:';
 
@@ -82,6 +83,29 @@ export const ViewLayoutStore = {
 
   set(viewId: string, layout: ViewLayoutPositions): void {
     writeLayoutToSnapshot(viewId, layout);
+  },
+
+  /** Update a single element position within a view layout (merge). */
+  updatePosition(viewId: string, elementId: string, pos: ViewNodePosition): void {
+    if (!viewId || !elementId) return;
+    const current = readLayoutFromSnapshot(viewId);
+    writeLayoutToSnapshot(viewId, { ...current, [elementId]: pos });
+  },
+
+  /** Batch-update multiple element positions within a view layout (merge). */
+  updatePositions(viewId: string, positions: Record<string, ViewNodePosition>): void {
+    if (!viewId) return;
+    const current = readLayoutFromSnapshot(viewId);
+    writeLayoutToSnapshot(viewId, { ...current, ...positions });
+  },
+
+  /** Remove a single element from a view layout. */
+  removeElement(viewId: string, elementId: string): void {
+    if (!viewId || !elementId) return;
+    const current = readLayoutFromSnapshot(viewId);
+    const next = { ...current };
+    delete next[elementId];
+    writeLayoutToSnapshot(viewId, next);
   },
 
   remove(viewId: string): void {

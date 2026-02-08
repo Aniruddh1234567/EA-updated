@@ -436,6 +436,54 @@
   background: linear-gradient(180deg, #fff7e6 0%, #ffffff 40%);
 }
 
+.relationshipChooser {
+  position: fixed;
+  transform: translate(-50%, -50%);
+  z-index: 1600;
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 8px;
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.12);
+  padding: 8px;
+  min-width: 180px;
+  display: grid;
+  gap: 6px;
+  pointer-events: auto;
+}
+
+.relationshipChooserLabel {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: rgba(0, 0, 0, 0.65);
+}
+
+.relationshipChooserOptions {
+  display: grid;
+  gap: 6px;
+}
+
+.relationshipChooserOption {
+  width: 100%;
+  background: #fff7e6;
+  border: 1px solid rgba(250, 140, 22, 0.35);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.relationshipChooserOption:hover {
+  background: #fff1d6;
+  border-color: rgba(250, 140, 22, 0.6);
+}
+
+.relationshipChooserOption:focus-visible {
+  outline: 2px solid rgba(250, 140, 22, 0.8);
+  outline-offset: 2px;
+}
+
 .studioCommandRow {
   display: inline-flex;
   align-items: center;
@@ -975,6 +1023,12 @@
   pointer-events: none;
 }
 
+.studioAlignmentGuideOverlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
 .studioAlignmentGuideVertical {
   position: absolute;
   top: 0;
@@ -1207,11 +1261,15 @@
   padding: 4px;
   border-radius: 6px;
   background: #f5f5f5;
+  pointer-events: none;
 }
 .studioToolboxIconImage {
   width: 100%;
   height: 100%;
   object-fit: contain;
+  pointer-events: none;
+  -webkit-user-drag: none;
+  user-select: none;
 }
 
 .studioToolboxEmpty {
@@ -1418,6 +1476,29 @@
   background: var(--ide-header-bg);
 }
 
+.panelTabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.panelTab,
+.panelTabActive {
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-size: 12px;
+  background: transparent;
+  color: var(--ide-tree-line);
+  cursor: pointer;
+}
+
+.panelTabActive {
+  border-color: var(--ide-border);
+  color: var(--ide-tree-hover-bg);
+  background: rgba(148, 163, 184, 0.15);
+}
+
 .bottomPanelTitle {
   font-size: 13px;
   text-transform: uppercase;
@@ -1530,13 +1611,14 @@
 }
 
 .explorerTree {
-  padding: 4px 6px 6px;
-  font-size: 12.5px;
+  padding: 2px 4px 4px;
+  font-size: 12px;
+  color: var(--ide-tree-text);
 }
 
-/* Clear hierarchy: 16–20px indentation per level. */
+/* Clear hierarchy: 12-14px indentation per level. */
 .explorerTree :global(.ant-tree-indent-unit) {
-  width: 16px;
+  width: 14px;
 }
 
 /* Dotted hierarchy guide lines (VS Code / EA tools style). */
@@ -1546,45 +1628,45 @@
   height: 100%;
 }
 
-/* Remove dotted hierarchy guides for a cleaner VS Code-like tree. */
-
-/* Solid tree lines when showLine is enabled. */
-.explorerTree :global(.ant-tree-show-line .ant-tree-indent-unit::before) {
+/* Custom tree lines (avoid Ant Design line overlay). */
+.explorerTree :global(.ant-tree-indent-unit)::before {
   content: '';
   position: absolute;
   left: 50%;
-  top: -10px;
-  bottom: -10px;
+  top: -12px;
+  bottom: -12px;
   border-left: 1px solid var(--ide-tree-line);
-  opacity: 0.6;
+  opacity: 0.85;
 }
 
-.explorerTree :global(.ant-tree-show-line .ant-tree-switcher) {
+.explorerTree :global(.ant-tree-switcher) {
   position: relative;
 }
 
-.explorerTree :global(.ant-tree-show-line .ant-tree-switcher::before) {
+.explorerTree :global(.ant-tree-switcher:not(.ant-tree-switcher-noop))::before {
   content: '';
   position: absolute;
-  left: -10px;
+  left: -8px;
   top: 50%;
-  width: 10px;
+  width: 8px;
   border-top: 1px solid var(--ide-tree-line);
   transform: translateY(-50%);
-  opacity: 0.6;
+  opacity: 0.85;
 }
 
 .explorerTree :global(.ant-tree-treenode) {
-  padding-block: 1px;
+  padding-block: 0;
   position: relative;
 }
 
 .explorerTree :global(.ant-tree-node-content-wrapper) {
-  min-height: 24px;
+  min-height: 22px;
   display: inline-flex;
   align-items: center;
   width: 100%;
-  padding-inline: 6px;
+  padding-inline: 4px;
+  overflow: hidden;
+  color: inherit;
 }
 
 /* Explorer affordances: neutral selection (no blue, no pills). */
@@ -1598,7 +1680,7 @@
 }
 
 .explorerTree :global(.ant-tree-node-content-wrapper.ant-tree-node-selected) {
-  background: var(--ide-tree-selected-bg);
+  background: var(--ide-tree-selected-bg) !important;
 }
 
 /* VS Code-like left accent line for the selected row. */
@@ -1614,7 +1696,7 @@
 }
 
 .explorerTree :global(.ant-tree-node-content-wrapper.ant-tree-node-selected:hover) {
-  background: var(--ide-tree-selected-bg);
+  background: var(--ide-tree-selected-bg) !important;
 }
 
 .pathActive {
@@ -1627,18 +1709,30 @@
 
 /* Icon + caret alignment (16px icons, same color as text). */
 .explorerTree :global(.ant-tree-iconEle) {
-  display: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-right: 4px;
+  color: var(--ide-tree-muted);
+  opacity: 0.75;
+}
+
+.explorerTree :global(.ant-tree-iconEle .anticon) {
+  font-size: 12px;
 }
 
 .explorerTree :global(.ant-tree-switcher) {
-  width: 18px;
-  height: 18px;
+  width: 14px;
+  height: 14px;
   margin-right: 4px;
+  color: var(--ide-tree-line);
 }
 
 .explorerTree :global(.ant-tree-switcher-noop) {
-  width: 18px;
-  height: 18px;
+  width: 14px;
+  height: 14px;
   margin-right: 4px;
 }
 
@@ -1647,3 +1741,710 @@
   align-items: center;
   justify-content: center;
 }
+
+.explorerTree :global(.ant-tree) {
+  overflow-x: hidden;
+}
+
+.explorerTreeToggle {
+  width: 13px;
+  height: 13px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  line-height: 1;
+  border: 1px solid var(--ide-tree-muted);
+  color: var(--ide-tree-text);
+  background: var(--ide-bg-container);
+  font-weight: 600;
+}
+
+.explorerTreeSpacer {
+  width: 12px;
+  height: 12px;
+  display: inline-block;
+}
+
+.explorerTreeLabel {
+  display: inline-flex;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.explorerTreeCta {
+  display: grid;
+  gap: 8px;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.explorerTreeCta :global(.ant-typography) {
+  white-space: normal;
+}
+
+.explorerTreeCta :global(.ant-btn) {
+  width: 100%;
+  max-width: 100%;
+  white-space: normal;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   DARK THEME OVERRIDES — VS Code Dark
+   ═══════════════════════════════════════════════════════════════════
+   Hierarchy tokens:
+     bg-app:       #1e1e1e   (root / inspector)
+     bg-panel:     #252526   (header, explorer, toolbox container)
+     bg-card:      #2d2d2d   (cards, toolbox tiles, elevated)
+     bg-surface:   #333333   (hover states)
+
+     text-primary: #d4d4d4   text-secondary: #9da0a6
+     text-muted:   #6e7681   text-disabled:  #555555
+
+     accent:       #3794ff   accent-hover: #4aa0ff
+     accent-sel:   #094771   (VS Code selection blue)
+
+     icon-default: #c5c5c5   icon-hover: #ffffff
+     icon-active:  #3794ff
+
+     border:       #3c3c3c
+     btn-primary:  #0e639c   btn-primary-hover: #1177bb
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── Header (top bar) ── */
+:global([data-theme="dark"]) .topHeader {
+  background: #252526 !important;
+  color: #d4d4d4;
+  border-bottom: 1px solid #3c3c3c !important;
+}
+
+:global([data-theme="dark"]) .topHeader :global(.ant-typography),
+:global([data-theme="dark"]) .topHeader :global(.ant-typography span),
+:global([data-theme="dark"]) .topHeader :global(.ant-btn),
+:global([data-theme="dark"]) .topHeader :global(.ant-btn .anticon) {
+  color: #d4d4d4 !important;
+}
+
+:global([data-theme="dark"]) .topHeader :global(.ant-btn:hover),
+:global([data-theme="dark"]) .topHeader :global(.ant-btn:hover .anticon) {
+  color: #ffffff !important;
+}
+
+:global([data-theme="dark"]) .topHeader :global(.ant-menu),
+:global([data-theme="dark"]) .topHeader :global(.ant-menu-item),
+:global([data-theme="dark"]) .topHeader :global(.ant-menu-submenu-title),
+:global([data-theme="dark"]) .topHeader :global(.ant-menu-submenu-arrow),
+:global([data-theme="dark"]) .topHeader :global(.ant-menu-overflow-item) {
+  color: #d4d4d4 !important;
+  background: transparent !important;
+}
+
+:global([data-theme="dark"]) .topHeader :global(.ant-menu-item-selected),
+:global([data-theme="dark"]) .topHeader :global(.ant-menu-submenu-selected) {
+  color: #ffffff !important;
+}
+
+:global([data-theme="dark"]) .topHeader :global(.ant-menu-item:hover),
+:global([data-theme="dark"]) .topHeader :global(.ant-menu-submenu-title:hover) {
+  color: #ffffff !important;
+  background: rgba(255, 255, 255, 0.06) !important;
+}
+
+/* ── Activity bar (icon rail) ── */
+:global([data-theme="dark"]) .activitySider {
+  background: #252526 !important;
+  color: #c5c5c5;
+}
+
+:global([data-theme="dark"]) .activitySider :global(.ant-layout-sider-children) {
+  background: #252526;
+}
+
+:global([data-theme="dark"]) .activitySider :global(.ant-btn),
+:global([data-theme="dark"]) .activitySider :global(.ant-btn .anticon),
+:global([data-theme="dark"]) .activitySider :global(.ant-typography),
+:global([data-theme="dark"]) .activitySider :global(.ant-typography span) {
+  color: #c5c5c5 !important;
+}
+
+:global([data-theme="dark"]) .activitySider :global(.ant-btn:hover),
+:global([data-theme="dark"]) .activitySider :global(.ant-btn:hover .anticon) {
+  color: #ffffff !important;
+}
+
+:global([data-theme="dark"]) .iconRail {
+  background: #252526;
+}
+
+/* ── Explorer sidebar ── */
+:global([data-theme="dark"]) .leftContextPanel {
+  background: #252526;
+  border-color: #3c3c3c;
+}
+
+:global([data-theme="dark"]) .sidebarHeader {
+  background: #252526;
+  border-color: #3c3c3c;
+}
+
+:global([data-theme="dark"]) .explorerTree :global(.ant-tree-node-content-wrapper:hover) {
+  background: #2a2d2e !important;
+}
+
+:global([data-theme="dark"]) .explorerTree :global(.ant-tree-node-content-wrapper.ant-tree-node-selected) {
+  background: #094771 !important;
+}
+
+:global([data-theme="dark"]) .explorerTree :global(.ant-tree-node-content-wrapper.ant-tree-node-selected:hover) {
+  background: #094771 !important;
+}
+
+:global([data-theme="dark"]) .explorerTree :global(.ant-tree-treenode-selected)::before {
+  background: #3794ff;
+}
+
+:global([data-theme="dark"]) .explorerTree :global(.ant-tree-indent-unit)::before {
+  border-left-color: #3c3c3c;
+}
+
+:global([data-theme="dark"]) .explorerTree :global(.ant-tree-switcher:not(.ant-tree-switcher-noop))::before {
+  border-top-color: #3c3c3c;
+}
+
+/* ── Canvas (ALWAYS stays light) ── */
+:global([data-theme="dark"]) .studioCanvas {
+  background:
+    linear-gradient(0deg, transparent 95%, rgba(0, 0, 0, 0.06) 95%),
+    linear-gradient(90deg, transparent 95%, rgba(0, 0, 0, 0.06) 95%),
+    #fafafa !important;
+  background-size: 20px 20px !important;
+}
+
+:global([data-theme="dark"]) .studioCanvasHint {
+  background: rgba(255, 255, 255, 0.92);
+  color: #333333;
+  border-color: rgba(0, 0, 0, 0.12);
+}
+
+/* ── Studio shell (wrapper) ── */
+:global([data-theme="dark"]) .studioShell {
+  background: #1e1e1e;
+  border-color: #3c3c3c;
+}
+
+/* ── Studio sub-header & view tabs ── */
+:global([data-theme="dark"]) .studioSubHeader {
+  background: #252526;
+  border-color: #3c3c3c;
+}
+
+:global([data-theme="dark"]) .studioViewTabs {
+  background: #252526;
+  border-color: #3c3c3c;
+}
+
+:global([data-theme="dark"]) .studioPromptRow {
+  background: #252526;
+  border-color: #3c3c3c;
+}
+
+/* ── Studio workspace cards ── */
+:global([data-theme="dark"]) .studioWorkspaceCard {
+  background: #2d2d2d !important;
+  border-color: #3c3c3c !important;
+}
+
+/* ── Studio right panel (inspector) ── */
+:global([data-theme="dark"]) .studioRight {
+  color: #d4d4d4;
+}
+
+:global([data-theme="dark"]) .studioRightSection {
+  background: #1e1e1e;
+  border-color: #3c3c3c;
+}
+
+/* Divider between inspector & toolbox sections */
+:global([data-theme="dark"]) .studioRightSection + .studioRightSection {
+  border-top: 1px solid #3c3c3c;
+}
+
+:global([data-theme="dark"]) .studioLeft {
+  background: #252526;
+  border-color: #3c3c3c;
+}
+
+/* ── Toolbars ── */
+:global([data-theme="dark"]) .studioToolBar {
+  background: #2d2d2d !important;
+  border-color: #3c3c3c !important;
+}
+
+:global([data-theme="dark"]) .studioToolButtonActive {
+  background: rgba(255, 255, 255, 0.12) !important;
+}
+
+:global([data-theme="dark"]) .studioToolButton :global(.anticon),
+:global([data-theme="dark"]) .studioToolButtonActive :global(.anticon) {
+  color: #c5c5c5;
+}
+
+:global([data-theme="dark"]) .studioToolButton:hover :global(.anticon) {
+  color: #ffffff;
+}
+
+:global([data-theme="dark"]) .studioToolButtonActive :global(.anticon) {
+  color: #3794ff;
+}
+
+/* ── Studio command bar text ── */
+:global([data-theme="dark"]) .studioCommandStatus {
+  color: #6e7681;
+}
+
+:global([data-theme="dark"]) .studioCommandTitle {
+  color: #d4d4d4;
+}
+
+:global([data-theme="dark"]) .studioCommandWorkspace {
+  color: #d4d4d4;
+}
+
+:global([data-theme="dark"]) .studioCommandMeta {
+  color: #9da0a6;
+}
+
+:global([data-theme="dark"]) .studioCommandDivider {
+  background: #3c3c3c;
+}
+
+/* ── Ribbon groups ── */
+:global([data-theme="dark"]) .studioRibbonGroup {
+  background: #2d2d2d;
+  border-color: #3c3c3c;
+}
+
+:global([data-theme="dark"]) .studioRibbonGroupSmall {
+  background: #2d2d2d;
+  border-color: #3c3c3c;
+}
+
+:global([data-theme="dark"]) .studioRibbonGroupPrimary {
+  background: #2d2d2d;
+  border-color: #3c3c3c;
+}
+
+:global([data-theme="dark"]) .studioRibbonGroupMuted {
+  background: #252526;
+  border-color: #3c3c3c;
+  color: #9da0a6;
+}
+
+:global([data-theme="dark"]) .studioRibbonGroupActions {
+  background: #2d2d2d;
+  border-color: #3c3c3c;
+}
+
+:global([data-theme="dark"]) .studioRibbonGroupTitle {
+  color: #9da0a6;
+}
+
+:global([data-theme="dark"]) .studioRibbonItem {
+  color: #d4d4d4;
+}
+
+:global([data-theme="dark"]) .studioRibbonItemLabel {
+  color: #d4d4d4;
+}
+
+:global([data-theme="dark"]) .studioRibbonItemMuted {
+  color: #9da0a6;
+}
+
+:global([data-theme="dark"]) .studioRibbonItemMutedLabel {
+  color: #9da0a6;
+}
+
+:global([data-theme="dark"]) .studioRibbonHint {
+  color: #6e7681;
+}
+
+:global([data-theme="dark"]) .studioRibbonHintIcon {
+  color: #c5c5c5;
+}
+
+:global([data-theme="dark"]) .studioRibbonDivider {
+  background: #3c3c3c;
+}
+
+:global([data-theme="dark"]) .studioRibbonButton {
+  background: #2d2d2d;
+  border-color: #3c3c3c;
+  color: #d4d4d4;
+}
+
+:global([data-theme="dark"]) .studioRibbonButton:hover {
+  background: #333333;
+  border-color: #505050;
+}
+
+:global([data-theme="dark"]) .studioRibbonButtonIconOnly {
+  background: #2d2d2d;
+  border-color: #3c3c3c;
+}
+
+:global([data-theme="dark"]) .studioRibbonButtonIconOnly:hover {
+  background: #333333;
+  border-color: #505050;
+}
+
+/* ── Ribbon toggles ── */
+:global([data-theme="dark"]) .studioRibbonToggle {
+  color: #cccccc !important;
+  border-color: #3c3c3c !important;
+}
+
+:global([data-theme="dark"]) .studioRibbonToggle:hover {
+  background: #2a2d2e !important;
+}
+
+:global([data-theme="dark"]) .studioRibbonToggleActive {
+  background: rgba(55, 148, 255, 0.18) !important;
+  color: #ffffff !important;
+  border-color: #3794ff !important;
+}
+
+/* ── Shortcut bar ── */
+:global([data-theme="dark"]) .studioShortcutBar {
+  background: #2d2d2d;
+  border-color: #3c3c3c;
+}
+
+:global([data-theme="dark"]) .studioShortcutButtonActive {
+  background: rgba(255, 255, 255, 0.1) !important;
+}
+
+:global([data-theme="dark"]) .studioShortcutLabel {
+  color: #9da0a6;
+}
+
+/* ── Layer inline group pill backgrounds ── */
+:global([data-theme="dark"]) .studioLayerInlineGroup {
+  background: #2d2d2d;
+  border-color: #3c3c3c;
+}
+
+:global([data-theme="dark"]) .studioLayerInlineGroup :global(.ant-checkbox-wrapper) {
+  color: #9da0a6;
+}
+
+:global([data-theme="dark"]) .studioLayerInlineItem {
+  background: #252526 !important;
+  border-color: #3c3c3c !important;
+  color: #d4d4d4;
+}
+
+:global([data-theme="dark"]) .studioLayerInlineItem:hover {
+  background: #333333 !important;
+}
+
+:global([data-theme="dark"]) .studioLayerInlineItemActive {
+  background: #094771 !important;
+  border-color: #3794ff !important;
+}
+
+/* ── Relationship chooser ── */
+:global([data-theme="dark"]) .relationshipChooser {
+  background: #2d2d2d !important;
+  border-color: #3c3c3c !important;
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.5) !important;
+}
+
+:global([data-theme="dark"]) .relationshipChooserLabel {
+  color: #9da0a6;
+}
+
+:global([data-theme="dark"]) .relationshipChooserOption {
+  background: #333333;
+  border-color: rgba(250, 140, 22, 0.35);
+  color: #d4d4d4;
+}
+
+:global([data-theme="dark"]) .relationshipChooserOption:hover {
+  background: #3c3c3c;
+}
+
+/* ── Palette & toolbox panels ── */
+:global([data-theme="dark"]) .studioPaletteItem {
+  background: #2d2d2d !important;
+  border-color: #3c3c3c !important;
+}
+
+:global([data-theme="dark"]) .studioPaletteItemButton {
+  background: #2d2d2d !important;
+  border-color: #3c3c3c !important;
+  color: #d4d4d4;
+}
+
+:global([data-theme="dark"]) .studioPaletteItemButton:hover {
+  background: #3c3c3c !important;
+}
+
+:global([data-theme="dark"]) .studioPaletteItemButtonActive {
+  border-color: #3794ff !important;
+  box-shadow: 0 0 0 2px rgba(55, 148, 255, 0.2) !important;
+  background: #094771 !important;
+}
+
+:global([data-theme="dark"]) .studioToolboxPanel {
+  background: #252526 !important;
+  border-color: #3c3c3c !important;
+  border-top: 1px solid #3c3c3c !important;
+}
+
+:global([data-theme="dark"]) .studioToolboxHeader {
+  color: #d4d4d4;
+}
+
+:global([data-theme="dark"]) .studioToolboxTitle {
+  color: #d4d4d4;
+}
+
+:global([data-theme="dark"]) .studioToolboxSectionTitle {
+  color: #9da0a6;
+}
+
+:global([data-theme="dark"]) .studioToolboxEmpty {
+  color: #6e7681;
+}
+
+:global([data-theme="dark"]) .studioToolboxIconButton {
+  background: #2d2d2d !important;
+  border-color: #3c3c3c !important;
+}
+
+:global([data-theme="dark"]) .studioToolboxIconButton :global(.anticon) {
+  color: #c5c5c5;
+}
+
+:global([data-theme="dark"]) .studioToolboxIconButton:hover {
+  background: #3c3c3c !important;
+  border-color: #4f4f4f !important;
+}
+
+:global([data-theme="dark"]) .studioToolboxIconButton:hover :global(.anticon) {
+  color: #ffffff;
+}
+
+:global([data-theme="dark"]) .studioToolboxIconButtonActive {
+  border-color: #3794ff !important;
+  background: #094771 !important;
+}
+
+:global([data-theme="dark"]) .studioToolboxIconButtonActive :global(.anticon) {
+  color: #ffffff;
+}
+
+:global([data-theme="dark"]) .studioToolboxIcon {
+  background: #1e1e1e !important;
+}
+
+:global([data-theme="dark"]) .studioToolboxIconImage {
+  filter: brightness(0.85) contrast(1.15);
+}
+
+/* ── Layer toggles & legends ── */
+:global([data-theme="dark"]) .studioLayerToggleGroup {
+  background: #252526 !important;
+  border-color: #3c3c3c !important;
+}
+
+:global([data-theme="dark"]) .studioLegendItem {
+  background: #252526 !important;
+  border-color: #3c3c3c !important;
+}
+
+:global([data-theme="dark"]) .studioLegendCompactLabel {
+  color: #9da0a6;
+}
+
+:global([data-theme="dark"]) .studioLegendCompactItem {
+  opacity: 0.85;
+}
+
+/* ── Tool helper & create hint overlays ── */
+:global([data-theme="dark"]) .studioToolHelper {
+  background: #2d2d2d !important;
+  border-color: #3c3c3c !important;
+  color: #d4d4d4;
+}
+
+:global([data-theme="dark"]) .studioCreateHint {
+  background: #2d2d2d !important;
+  border-color: #3c3c3c !important;
+  color: #9da0a6;
+}
+
+:global([data-theme="dark"]) .studioPlacementGhost {
+  border-color: #3794ff;
+  background: rgba(55, 148, 255, 0.08);
+}
+
+/* ── Type icon ── */
+:global([data-theme="dark"]) .studioTypeIcon {
+  color: #d4d4d4;
+}
+
+/* ── Status bar ── */
+:global([data-theme="dark"]) .studioStatusBar {
+  border-color: #3c3c3c;
+}
+
+/* ── Breadcrumb bar ── */
+:global([data-theme="dark"]) .studioBreadcrumbBar {
+  background: #252526 !important;
+  border-color: #3c3c3c !important;
+}
+
+:global([data-theme="dark"]) .studioBreadcrumbItem {
+  color: #9da0a6;
+}
+
+:global([data-theme="dark"]) .studioBreadcrumbItemActive {
+  color: #d4d4d4;
+}
+
+/* ── Notification banner ── */
+:global([data-theme="dark"]) .studioNotificationPanel {
+  background: #2d2d2d !important;
+}
+
+/* ── Editor tabs ── */
+:global([data-theme="dark"]) .editorTabs :global(.ant-tabs-nav) {
+  background: #252526;
+  border-color: #3c3c3c;
+}
+
+:global([data-theme="dark"]) .editorTabs :global(.ant-tabs-tab) {
+  background: #2d2d2d;
+  color: #cccccc;
+}
+
+:global([data-theme="dark"]) .editorTabs :global(.ant-tabs-tab:hover) {
+  background: #333333;
+  color: #ffffff;
+}
+
+:global([data-theme="dark"]) .editorTabs :global(.ant-tabs-tab-active) {
+  background: #1e1e1e;
+  color: #ffffff;
+}
+
+:global([data-theme="dark"]) .editorTabs :global(.ant-tabs-content-holder) {
+  background: #1e1e1e;
+}
+
+:global([data-theme="dark"]) .editorTabs :global(.ant-tabs-nav::before) {
+  border-color: #3c3c3c !important;
+}
+
+/* ── Bottom & right panels ── */
+:global([data-theme="dark"]) .rightPanel {
+  background: #252526;
+  border-color: #3c3c3c;
+}
+
+:global([data-theme="dark"]) .rightCollapsedBar {
+  background: #252526;
+  border-color: #3c3c3c;
+}
+
+:global([data-theme="dark"]) .bottomPanel {
+  background: #252526;
+  border-color: #3c3c3c;
+}
+
+:global([data-theme="dark"]) .bottomPanelHeader {
+  background: #252526;
+  border-color: #3c3c3c;
+}
+
+:global([data-theme="dark"]) .bottomCollapsedBar {
+  background: #252526;
+  border-color: #3c3c3c;
+}
+
+:global([data-theme="dark"]) .panelTab,
+:global([data-theme="dark"]) .panelTabActive {
+  color: #9da0a6;
+}
+
+:global([data-theme="dark"]) .panelTab:hover {
+  color: #d4d4d4;
+}
+
+:global([data-theme="dark"]) .panelTabActive {
+  background: rgba(55, 148, 255, 0.12);
+  border-color: #3c3c3c;
+  color: #d4d4d4;
+}
+
+/* ── Header search ── */
+:global([data-theme="dark"]) .headerSearch :global(.ant-input),
+:global([data-theme="dark"]) .headerSearch :global(.ant-input-affix-wrapper) {
+  background: #3c3c3c !important;
+  border-color: #3c3c3c !important;
+  color: #d4d4d4 !important;
+}
+
+:global([data-theme="dark"]) .headerSearch :global(.ant-input::placeholder) {
+  color: #6e7681 !important;
+}
+
+:global([data-theme="dark"]) .headerSearch :global(.ant-input-affix-wrapper:focus),
+:global([data-theme="dark"]) .headerSearch :global(.ant-input-affix-wrapper-focused) {
+  border-color: #3794ff !important;
+}
+
+/* ── Toolbox tabs in dark ── */
+:global([data-theme="dark"]) .studioToolboxTabs :global(.ant-tabs-nav) {
+  border-bottom-color: #3c3c3c;
+}
+
+:global([data-theme="dark"]) .studioToolboxTabs :global(.ant-tabs-tab) {
+  color: #9da0a6;
+  background: transparent;
+}
+
+:global([data-theme="dark"]) .studioToolboxTabs :global(.ant-tabs-tab:hover) {
+  color: #ffffff;
+}
+
+:global([data-theme="dark"]) .studioToolboxTabs :global(.ant-tabs-tab-active) {
+  border-bottom: 2px solid #3794ff;
+}
+
+:global([data-theme="dark"]) .studioToolboxTabs :global(.ant-tabs-tab-active .ant-tabs-tab-btn) {
+  color: #ffffff !important;
+  font-weight: 500;
+}
+
+:global([data-theme="dark"]) .studioToolboxTabs :global(.ant-tabs-ink-bar) {
+  background: #3794ff !important;
+}
+
+/* ── Studio palette / mode tabs ── */
+:global([data-theme="dark"]) .studioViewTabs :global(.ant-tabs-tab) {
+  color: #cccccc;
+}
+
+:global([data-theme="dark"]) .studioViewTabs :global(.ant-tabs-tab:hover) {
+  color: #ffffff;
+}
+
+:global([data-theme="dark"]) .studioViewTabs :global(.ant-tabs-tab-active .ant-tabs-tab-btn) {
+  color: #3794ff !important;
+}
+

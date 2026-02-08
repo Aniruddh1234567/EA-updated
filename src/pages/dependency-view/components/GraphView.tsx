@@ -1,5 +1,5 @@
 // GLOBAL RULE: Diagram interactions are navigational only. No diagram interaction may create, modify, or infer architecture truth.
-import { Button, message } from 'antd';
+import { Button } from 'antd';
 import React, { useCallback, useEffect, useRef } from 'react';
 import cytoscape, { Core } from 'cytoscape';
 
@@ -11,6 +11,7 @@ import { isObjectVisibleForLifecycleCoverage } from '@/repository/lifecycleCover
 import { useIdeSelection } from '@/ide/IdeSelectionContext';
 import { useIdeShell } from '@/components/IdeShellLayout';
 import { ViewLayoutStore } from '@/diagram-studio/view-runtime/ViewLayoutStore';
+import { message } from '@/ea/eaConsole';
 
 const GRID_SIZE = 12;
 

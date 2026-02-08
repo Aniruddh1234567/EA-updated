@@ -9,7 +9,7 @@ import { ProDescriptions, SettingDrawer } from '@ant-design/pro-components';
 import type { RequestConfig, RunTimeLayoutConfig } from '@umijs/max';
 import { Link, useLocation } from '@umijs/max';
 import React from 'react';
-import { Checkbox, Collapse, Descriptions, Drawer, Dropdown, Form, Input, Modal, Select, Tree, Typography, message, theme as antdTheme } from 'antd';
+import { Checkbox, Collapse, Descriptions, Drawer, Dropdown, Form, Input, Modal, Select, Tree, Typography, theme as antdTheme } from 'antd';
 import type { DataNode } from 'antd/es/tree';
 import { AvatarDropdown, AvatarName } from '@/components';
 import IdeShellLayout from '@/components/IdeShellLayout';
@@ -44,6 +44,8 @@ import {
 } from '@/repository/referenceFrameworkPolicy';
 import { isCustomFrameworkModelingEnabled, isObjectTypeEnabledForFramework } from '@/repository/customFrameworkConfig';
 import { runtimeEnv } from '@/runtime/runtimeEnv';
+import { message } from '@/ea/eaConsole';
+import { ThemeProvider } from '@/theme/ThemeContext';
 
 const isDev = process.env.NODE_ENV === 'development';
 const isDevOrTest = isDev || process.env.CI;
@@ -232,7 +234,7 @@ const EaExplorerSiderContent: React.FC<{
   const [activeKeys, setActiveKeys] = React.useState<string[]>(['Workspace', 'Metamodel', 'Catalogues', 'Diagrams']);
   const [drawerOpen, setDrawerOpen] = React.useState(false);
   const [selection, setSelection] = React.useState<DrawerSelection | undefined>(undefined);
-  const isReadOnlyMode = (metadata?.governanceMode ?? 'Advisory') === 'Advisory';
+  const isReadOnlyMode = false;
 
   const treeData = React.useMemo(() => buildMetamodelTreeData(), []);
 
@@ -1152,28 +1154,10 @@ export async function getInitialState(): Promise<{
   };
 }
 
+// Theme algorithm (compact + light/dark) is now managed by <ThemeProvider> in rootContainer.
+// This export only passes through existing config without overriding the algorithm.
 export const antd = (memo: Record<string, any>) => {
-  const existingTheme = memo?.theme ?? {};
-  const existingAlgorithm = existingTheme?.algorithm;
-  const normalizedAlgorithm =
-    existingAlgorithm == null
-      ? []
-      : Array.isArray(existingAlgorithm)
-        ? existingAlgorithm
-        : [existingAlgorithm];
-
-  const densityAlgorithm = runtimeEnv.isDesktop ? antdTheme.compactAlgorithm : undefined;
-  const nextAlgorithm = densityAlgorithm
-    ? [densityAlgorithm, ...normalizedAlgorithm]
-    : existingAlgorithm;
-
-  return {
-    ...memo,
-    theme: {
-      ...existingTheme,
-      algorithm: nextAlgorithm,
-    },
-  };
+  return memo;
 };
 
 // ProLayout 支持的api https://procomponents.ant.design/components/layout
@@ -1262,10 +1246,12 @@ export const request: RequestConfig = {
 
 export function rootContainer(container: React.ReactNode) {
   return (
-    <EaProjectProvider>
-      <EaRepositoryProvider>
-        <IdeSelectionProvider>{container}</IdeSelectionProvider>
-      </EaRepositoryProvider>
-    </EaProjectProvider>
+    <ThemeProvider>
+      <EaProjectProvider>
+        <EaRepositoryProvider>
+          <IdeSelectionProvider>{container}</IdeSelectionProvider>
+        </EaRepositoryProvider>
+      </EaProjectProvider>
+    </ThemeProvider>
   );
 }

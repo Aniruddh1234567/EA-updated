@@ -1,5 +1,6 @@
 import React from 'react';
-import { Alert, List, Modal, Space, Typography, message } from 'antd';
+import { Alert, List, Modal, Space, Typography } from 'antd';
+import { message } from '@/ea/eaConsole';
 
 import { useEaRepository } from '@/ea/EaRepositoryContext';
 import { useIdeSelection } from '@/ide/IdeSelectionContext';

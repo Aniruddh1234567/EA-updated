@@ -1,0 +1,242 @@
+/* ──────────────────────────────────────────
+   DarkDropdown — zero-native-select dropdown
+   Dual-theme: Light default / Dark via [data-theme]
+   ────────────────────────────────────────── */
+
+/* ── Light theme tokens (compile-time defaults) ── */
+@dd-bg: #ffffff;
+@dd-bg-hover: #fafafa;
+@dd-bg-active: #e8e8e8;
+@dd-border: #d9d9d9;
+@dd-text: #1f1f1f;
+@dd-placeholder: #8c8c8c;
+@dd-disabled-text: #bfbfbf;
+@dd-accent: #1890ff;
+
+/* ── root ── */
+.ddRoot {
+  position: relative;
+  width: 100%;
+}
+
+/* ── trigger (looks identical to a text input) ── */
+.ddTrigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  height: 34px;
+  padding: 0 10px;
+  background: @dd-bg;
+  border: 1px solid @dd-border;
+  border-radius: 4px;
+  color: @dd-text;
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.15s;
+  text-align: left;
+  gap: 8px;
+}
+
+.ddTrigger:hover {
+  border-color: @dd-border;
+  background: @dd-bg-hover;
+}
+
+.ddTrigger:focus-visible,
+.ddOpen .ddTrigger {
+  border-color: @dd-accent;
+  background: @dd-bg;
+}
+
+.ddTriggerText {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: @dd-text;
+}
+
+.ddTriggerPlaceholder {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: @dd-placeholder;
+}
+
+.ddChevron {
+  flex-shrink: 0;
+  color: @dd-placeholder;
+  transition: transform 0.15s;
+}
+
+.ddOpen .ddChevron {
+  transform: rotate(180deg);
+}
+
+/* ── disabled ── */
+.ddDisabled .ddTrigger {
+  cursor: not-allowed;
+  opacity: 0.55;
+  color: @dd-disabled-text;
+  background: #f5f5f5;
+  border-color: @dd-border;
+}
+
+.ddDisabled .ddTriggerText,
+.ddDisabled .ddTriggerPlaceholder {
+  color: @dd-disabled-text;
+}
+
+/* ── floating menu (portalled to document.body, position:fixed) ── */
+.ddMenu {
+  position: fixed;
+  z-index: 1200;
+  background: @dd-bg;
+  border: 1px solid @dd-border;
+  border-radius: 4px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(0, 0, 0, 0.15);
+  padding: 4px;
+  max-height: 240px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.ddMenuUp {
+  border-radius: 4px;
+}
+
+.ddMenu::-webkit-scrollbar {
+  width: 5px;
+}
+
+.ddMenu::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.ddMenu::-webkit-scrollbar-thumb {
+  background: @dd-border;
+  border-radius: 3px;
+}
+
+/* ── option rows ── */
+.ddOption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  border-radius: 3px;
+  font-size: 12px;
+  color: @dd-text;
+  cursor: pointer;
+  user-select: none;
+  min-height: 30px;
+  transition: background 0.08s;
+}
+
+.ddOption:hover,
+.ddOptionFocused {
+  background: @dd-bg-hover;
+}
+
+.ddOptionSelected {
+  background: @dd-bg-active;
+  color: #fff;
+  font-weight: 500;
+}
+
+.ddOptionSelected.ddOptionFocused,
+.ddOptionSelected:hover {
+  background: #e6f4ff;
+}
+
+.ddCheck {
+  flex-shrink: 0;
+  color: @dd-accent;
+  margin-left: 8px;
+}
+
+/* ══════════════════════════════════════════
+   DARK THEME OVERRIDES
+   The dropdown is portalled to document.body, so we use
+   :global([data-theme="dark"]) to style the menu, and
+   data-theme on the ancestor for the trigger.
+   ══════════════════════════════════════════ */
+
+:global([data-theme="dark"]) .ddTrigger {
+  background: #1f1f1f;
+  border-color: #3c3c3c;
+  color: #d4d4d4;
+}
+
+:global([data-theme="dark"]) .ddTrigger:hover {
+  background: #262626;
+  border-color: #505050;
+}
+
+:global([data-theme="dark"]) .ddTrigger:focus-visible,
+:global([data-theme="dark"]) .ddOpen .ddTrigger {
+  border-color: #3794ff;
+  background: #1f1f1f;
+}
+
+:global([data-theme="dark"]) .ddTriggerText {
+  color: #d4d4d4;
+}
+
+:global([data-theme="dark"]) .ddTriggerPlaceholder {
+  color: #6e7681;
+}
+
+:global([data-theme="dark"]) .ddChevron {
+  color: #6e7681;
+}
+
+:global([data-theme="dark"]) .ddDisabled .ddTrigger {
+  background: #191919;
+  border-color: #282828;
+  color: #555555;
+}
+
+:global([data-theme="dark"]) .ddDisabled .ddTriggerText,
+:global([data-theme="dark"]) .ddDisabled .ddTriggerPlaceholder {
+  color: #555555;
+}
+
+/* Menu is portalled — lives directly under <body> */
+:global([data-theme="dark"]) .ddMenu {
+  background: #1f1f1f;
+  border-color: #3c3c3c;
+}
+
+:global([data-theme="dark"]) .ddMenu::-webkit-scrollbar-thumb {
+  background: #555555;
+}
+
+:global([data-theme="dark"]) .ddOption {
+  color: #d4d4d4;
+}
+
+:global([data-theme="dark"]) .ddOption:hover,
+:global([data-theme="dark"]) .ddOptionFocused {
+  background: #262626;
+}
+
+:global([data-theme="dark"]) .ddOptionSelected {
+  background: #2d2d2d;
+  color: #ffffff;
+}
+
+:global([data-theme="dark"]) .ddOptionSelected.ddOptionFocused,
+:global([data-theme="dark"]) .ddOptionSelected:hover {
+  background: #094771;
+}
+
+:global([data-theme="dark"]) .ddCheck {
+  color: #3794ff;
+}

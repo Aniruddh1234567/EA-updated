@@ -1,9 +1,17 @@
 import React from 'react';
 import { v4 as uuid } from 'uuid';
 import { history, useModel } from '@umijs/max';
-import { PageContainer } from '@ant-design/pro-components';
-import { Button, Card, Empty, Form, Input, Modal, Radio, Select, Space, Typography, message } from 'antd';
+import { Button, Dropdown, Form, Input, Modal, Segmented } from 'antd';
+import DarkDropdown from './DarkDropdown';
+import {
+  AppstoreOutlined,
+  FolderOpenOutlined,
+  ImportOutlined,
+  PlusOutlined,
+  RightOutlined,
+} from '@ant-design/icons';
 
+import styles from './index.module.less';
 import { useEaRepository } from '@/ea/EaRepositoryContext';
 import { useEaProject } from '@/ea/EaProjectContext';
 import {
@@ -13,16 +21,15 @@ import {
   REFERENCE_FRAMEWORKS,
   TIME_HORIZONS,
   type ArchitectureScope,
-  type FrameworkConfig,
   type GovernanceMode,
   type LifecycleCoverage,
   type ReferenceFramework,
   type TimeHorizon,
 } from '@/repository/repositoryMetadata';
-import { CUSTOM_CORE_EA_SEED } from '@/repository/customFrameworkConfig';
 import { ViewStore } from '@/diagram-studio/view-runtime/ViewStore';
 import { ViewLayoutStore } from '@/diagram-studio/view-runtime/ViewLayoutStore';
 import { DesignWorkspaceStore } from '@/ea/DesignWorkspaceStore';
+import { message } from '@/ea/eaConsole';
 
 const safeSlug = (value: string) =>
   (value ?? '')
@@ -62,14 +69,12 @@ const FirstLaunch: React.FC = () => {
   const LEGACY_RECENT_PROJECTS_KEY = 'ea.project.recent';
 
   const [mode, setMode] = React.useState<'home' | 'create'>('home');
-  const [customSeedModalOpen, setCustomSeedModalOpen] = React.useState(false);
-  const [customFrameworkConfig, setCustomFrameworkConfig] = React.useState<FrameworkConfig | undefined>(undefined);
-  const lastFrameworkRef = React.useRef<ReferenceFramework>('ArchiMate');
   const [legacyImportAvailable, setLegacyImportAvailable] = React.useState(false);
   const [legacyImporting, setLegacyImporting] = React.useState(false);
   const [recentProjects, setRecentProjects] = React.useState<
     Array<{ id: string; name: string; description?: string | null; lastOpened?: string | null }>
   >([]);
+  const [createFormReady, setCreateFormReady] = React.useState(false);
   const [form] = Form.useForm<{
     repositoryName: string;
     organizationName: string;
@@ -255,6 +260,21 @@ const FirstLaunch: React.FC = () => {
           },
           ...existing.filter((item) => item.id && item.id !== entry.id),
         ].slice(0, 10);
+        localStorage.setItem(RECENT_REPOSITORIES_KEY, JSON.stringify(next));
+        setRecentProjects(next);
+      } catch {
+        // ignore
+      }
+    },
+    [RECENT_REPOSITORIES_KEY],
+  );
+
+  const removeRecentProject = React.useCallback(
+    (id: string) => {
+      try {
+        const raw = localStorage.getItem(RECENT_REPOSITORIES_KEY);
+        const existing = safeParseJson<Array<{ id: string; name: string; description?: string; lastOpened?: string }>>(raw, []);
+        const next = existing.filter((item) => item.id !== id);
         localStorage.setItem(RECENT_REPOSITORIES_KEY, JSON.stringify(next));
         setRecentProjects(next);
       } catch {
@@ -618,351 +638,307 @@ const FirstLaunch: React.FC = () => {
   }, [importRepositoryPackage]);
 
   return (
-    <div style={{ height: '100vh' }}>
-      <PageContainer
-        ghost
-        style={{ height: '100%' }}
-        content={
-          <div
-            style={{
-              height: 'calc(100vh - 48px)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: 12,
+    <div className={styles.pageRoot}>
+      {/* ── TOP HEADER — matches Electron titleBarOverlay height ── */}
+      <div className={styles.topHeader}>
+        <span className={styles.topHeaderTitle}>Architecture Studio</span>
+      </div>
+
+      {/* ── MAIN LAYOUT ── */}
+      <div className={styles.shellLayout}>
+        {/* ── LEFT SIDEBAR — action anchor ── */}
+        <div className={styles.sidebar}>
+          <div className={styles.sidebarActions}>
+            <button type="button" className={styles.sidebarBtn} onClick={() => setMode('create')}>
+              <PlusOutlined /> Create New Repository
+            </button>
+            <button type="button" className={`${styles.sidebarBtn} ${styles.sidebarBtnSecondary}`} onClick={handleOpenProject}>
+              <FolderOpenOutlined /> Open Repository
+            </button>
+            <button type="button" className={`${styles.sidebarBtn} ${styles.sidebarBtnSecondary}`} onClick={() => importFileInputRef.current?.click()}>
+              <ImportOutlined /> Import Repository
+            </button>
+            {legacyImportAvailable ? (
+              <button type="button" className={`${styles.sidebarBtn} ${styles.sidebarBtnSecondary}`} onClick={handleLegacyImport}>
+                <ImportOutlined /> Import Legacy
+              </button>
+            ) : null}
+          </div>
+          <div className={styles.sidebarDivider} />
+          <div className={styles.sidebarSection}>Explorer</div>
+          <div className={styles.sidebarStatus}>
+            <span className={styles.sidebarStatusLabel}>No Repository Opened</span>
+            Open or create a repository to begin.
+          </div>
+          <input
+            ref={importFileInputRef}
+            type="file"
+            accept="application/octet-stream,.eaproj"
+            style={{ display: 'none' }}
+            onChange={(e) => {
+              void onImportFileSelected(e.target.files?.[0]);
+              e.currentTarget.value = '';
             }}
-          >
-            <Card
-              style={{ width: 640, maxWidth: '100%' }}
-              title="Enterprise Architecture Repository Hub"
-              bodyStyle={{ padding: 12 }}
-            >
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'minmax(0, 1.2fr) minmax(0, 0.8fr)',
-                  gap: 8,
-                }}
-              >
-                <div>
-                  {mode === 'home' ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                      <Typography.Title level={5} style={{ margin: 0, fontSize: 16 }}>
-                        Start
-                      </Typography.Title>
-                      <Typography.Paragraph type="secondary" style={{ marginBottom: 4, fontSize: 12 }}>
-                        Create or open a repository to begin modeling.
-                      </Typography.Paragraph>
+          />
+        </div>
 
-                      <Button type="primary" onClick={() => setMode('create')}>
-                        Create New Architecture Repository
-                      </Button>
+        {/* ── CENTER PANEL — context surface ── */}
+        {mode === 'home' ? (
+          <div className={styles.centerPanel}>
+            <div className={styles.centerContent}>
+              {/* branding */}
+              <div className={styles.brand}>
+                <h1 className={styles.brandTitle}>Welcome</h1>
+                <p className={styles.brandSubtitle}>Enterprise Architecture Modeling Environment</p>
+              </div>
 
-                      <Button onClick={handleOpenProject}>
-                        Open Repository
-                      </Button>
+              {/* workspace context */}
+              <div className={styles.workspaceContext}>
+                <h2 className={styles.workspaceContextTitle}>Workspace Context</h2>
+                <p className={styles.workspaceContextText}>
+                  Repositories store your enterprise models, views, and relationships.
+                </p>
+                <p className={styles.workspaceContextHint}>
+                  Create or open a repository to start modeling.
+                </p>
+              </div>
 
-                      {legacyImportAvailable ? (
-                        <Button onClick={handleLegacyImport} loading={legacyImporting}>
-                          Import into Repository Store
-                        </Button>
-                      ) : null}
+              <hr className={styles.sectionDivider} />
 
-                      <Button onClick={() => importFileInputRef.current?.click()}>
-                        Import Repository
-                      </Button>
-
-                      <input
-                        ref={importFileInputRef}
-                        type="file"
-                        accept="application/octet-stream,.eaproj"
-                        style={{ display: 'none' }}
-                        onChange={(e) => {
-                          void onImportFileSelected(e.target.files?.[0]);
-                          e.currentTarget.value = '';
-                        }}
-                      />
-                    </div>
+              {/* Recent section */}
+              <div className={styles.welcomeSection}>
+                <h2 className={styles.welcomeSectionTitle}>Recent</h2>
+                <div className={styles.recentList}>
+                  {recentProjects.length ? (
+                    recentProjects.map((item) => {
+                      const desc = item.description || 'EA repository';
+                      const timeStr = item.lastOpened
+                        ? new Date(item.lastOpened).toLocaleString()
+                        : null;
+                      return (
+                        <Dropdown
+                          key={`${item.id}-${item.name}`}
+                          menu={{
+                            items: [
+                              { key: 'open', label: 'Open' },
+                              { key: 'remove', label: 'Remove from Recent' },
+                              { type: 'divider' },
+                              { key: 'reveal', label: 'Reveal in Explorer', disabled: true },
+                            ],
+                            onClick: ({ key, domEvent }) => {
+                              domEvent.stopPropagation();
+                              if (key === 'open') void handleOpenRecentProject(item);
+                              else if (key === 'remove') removeRecentProject(item.id);
+                            },
+                          }}
+                          trigger={['contextMenu']}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => void handleOpenRecentProject(item)}
+                            className={styles.recentRow}
+                          >
+                            <div className={styles.recentRowIcon}>
+                              <AppstoreOutlined />
+                            </div>
+                            <div className={styles.recentRowCenter}>
+                              <span className={styles.recentRowName} title={item.name}>
+                                {item.name}
+                              </span>
+                              <span className={styles.recentRowMeta} title={desc}>
+                                {desc}
+                              </span>
+                            </div>
+                            <div className={styles.recentRowRight}>
+                              {timeStr && (
+                                <span className={styles.recentRowTime}>{timeStr}</span>
+                              )}
+                              <span className={styles.recentRowHint}>
+                                <RightOutlined />
+                              </span>
+                            </div>
+                          </button>
+                        </Dropdown>
+                      );
+                    })
                   ) : (
-                    <>
-                      <Typography.Title level={5} style={{ margin: 0, fontSize: 16 }}>
-                        New Architecture Repository
-                      </Typography.Title>
-                      <Typography.Paragraph type="secondary" style={{ marginBottom: 6, fontSize: 12 }}>
-                        Create a repository shell (metadata only). No architecture elements will be created.
-                      </Typography.Paragraph>
-                      <Form
-                        form={form}
-                        layout="vertical"
-                        size="small"
-                        requiredMark
-                        initialValues={{
-                          architectureScope: 'Enterprise',
-                          referenceFramework: 'ArchiMate',
-                          governanceMode: 'Strict',
-                          lifecycleCoverage: 'Both',
-                          timeHorizon: '1–3 years',
-                        }}
-                        onFinish={(values) => {
-                          const res = createNewRepository({
-                            ...values,
-                            frameworkConfig: values.referenceFramework === 'Custom' ? customFrameworkConfig : undefined,
-                          });
-                          if (!res.ok) {
-                            message.error(res.error);
-                            return;
-                          }
-
-                          // One-time IDE startup behavior for a newly created repository.
-                          // Scope-specific default starting point.
-                          try {
-                            const intent =
-                              values.architectureScope === 'Domain'
-                                ? 'business.capabilities'
-                                : values.architectureScope === 'Programme'
-                                  ? 'implmig.programmes'
-                                  : 'business.enterprises';
-                            localStorage.setItem('ea.startup.open.v1', intent);
-                          } catch {
-                            // Best-effort only.
-                          }
-
-                          // Best-effort: bootstrap a project so explorer/views are available immediately.
-                          // This creates metadata only; it does not create any architecture elements.
-                          void (async () => {
-                            try {
-                              await refreshProject();
-                            } catch {
-                              // Ignore refresh failures; createProject may still succeed depending on environment.
-                            }
-
-                            try {
-                              await createProject({
-                                name: values.repositoryName,
-                                description: `${values.organizationName} EA repository`,
-                              });
-                            } catch {
-                              // If the project already exists or API is unavailable, continue.
-                            }
-
-                            // Views are created explicitly by the user. No auto-seeding.
-
-                            const repositoryId = uuid();
-                            updateProjectStatus({
-                              repositoryId,
-                              repositoryName: values.repositoryName,
-                              dirty: false,
-                            });
-
-                            const payload = await buildProjectPayload();
-                            if (!payload) {
-                              message.error('Failed to create repository data.');
-                              return;
-                            }
-
-                            if (!window.eaDesktop?.saveManagedRepository) {
-                              message.info('Managed repositories are available in the desktop app.');
-                              return;
-                            }
-
-                            const saveRes = await window.eaDesktop.saveManagedRepository({
-                              payload,
-                              repositoryId,
-                            });
-
-                            if (!saveRes.ok) {
-                              message.error(saveRes.error);
-                              return;
-                            }
-
-                            const description = values.organizationName
-                              ? `${values.organizationName} EA repository`
-                              : null;
-                            updateRecentProjects({ id: saveRes.repositoryId ?? repositoryId, name: values.repositoryName, description });
-                            history.push('/workspace');
-                          })();
-
-                      message.success('Repository created.');
-                    }}
-                  >
-                    <Form.Item
-                      label="Repository Name"
-                      name="repositoryName"
-                      rules={[{ required: true, whitespace: true, message: 'Repository Name is required.' }]}
-                    >
-                      <Input placeholder="e.g. Tata Group EA Repository" />
-                    </Form.Item>
-
-                    <Form.Item
-                      label="Organization Name"
-                      name="organizationName"
-                      rules={[{ required: true, whitespace: true, message: 'Organization Name is required.' }]}
-                    >
-                      <Input placeholder="e.g. Tata Group" />
-                    </Form.Item>
-
-                    <Form.Item
-                      label="Architecture Scope"
-                      name="architectureScope"
-                      rules={[{ required: true, message: 'Architecture Scope is required.' }]}
-                    >
-                      <Select options={ARCHITECTURE_SCOPES.map((v) => ({ value: v, label: v }))} />
-                    </Form.Item>
-
-                    <Form.Item
-                      label="Reference Framework"
-                      name="referenceFramework"
-                      rules={[{ required: true, message: 'Reference Framework is required.' }]}
-                    >
-                      <Select
-                        options={REFERENCE_FRAMEWORKS.map((v) => ({ value: v, label: v }))}
-                        onChange={(value) => {
-                          if (value === 'Custom') {
-                            setCustomSeedModalOpen(true);
-                            form.setFieldsValue({ referenceFramework: lastFrameworkRef.current });
-                            return;
-                          }
-                          lastFrameworkRef.current = value as ReferenceFramework;
-                          setCustomFrameworkConfig(undefined);
-                        }}
-                      />
-                    </Form.Item>
-
-                    <Form.Item
-                      label="Governance Mode"
-                      name="governanceMode"
-                      rules={[{ required: true, message: 'Governance Mode is required.' }]}
-                    >
-                      <Radio.Group>
-                        <Space direction="vertical">
-                          {GOVERNANCE_MODES.map((v) => (
-                            <Radio key={v} value={v}>
-                              {v}
-                            </Radio>
-                          ))}
-                        </Space>
-                      </Radio.Group>
-                    </Form.Item>
-
-                    <Form.Item
-                      label="Lifecycle Coverage"
-                      name="lifecycleCoverage"
-                      rules={[{ required: true, message: 'Lifecycle Coverage is required.' }]}
-                    >
-                      <Select options={LIFECYCLE_COVERAGE_OPTIONS.map((v) => ({ value: v, label: v }))} />
-                    </Form.Item>
-
-                    <Form.Item
-                      label="Time Horizon"
-                      name="timeHorizon"
-                      rules={[{ required: true, message: 'Time Horizon is required.' }]}
-                    >
-                      <Select options={TIME_HORIZONS.map((v) => ({ value: v, label: v }))} />
-                    </Form.Item>
-
-                    <Space style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <Button onClick={() => setMode('home')}>Back</Button>
-                      <Button type="primary" htmlType="submit">
-                        Create Repository
-                      </Button>
-                    </Space>
-                  </Form>
-                </>
-              )}
-            </div>
-            <div>
-              <Typography.Title level={5} style={{ margin: 0, fontSize: 16 }}>
-                Recent Repositories
-              </Typography.Title>
-              <div
-                style={{
-                  marginTop: 6,
-                  padding: 10,
-                  border: '1px solid #f0f0f0',
-                  borderRadius: 8,
-                  background: '#fafafa',
-                  minHeight: 100,
-                }}
-              >
-                {recentProjects.length ? (
-                  <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                    {recentProjects.map((item) => (
-                      <button
-                        key={`${item.id}-${item.name}`}
-                        type="button"
-                        onClick={() => void handleOpenRecentProject(item)}
-                        style={{
-                          textAlign: 'left',
-                          border: '1px solid #f0f0f0',
-                          borderRadius: 6,
-                          background: '#fff',
-                          padding: 12,
-                          width: '100%',
-                          cursor: 'pointer',
-                        }}
-                      >
-                        <Typography.Text strong>{item.name}</Typography.Text>
-                        {item.description ? (
-                          <Typography.Text type="secondary" style={{ fontSize: 12, display: 'block' }}>
-                            {item.description}
-                          </Typography.Text>
-                        ) : null}
-                        {item.lastOpened ? (
-                          <Typography.Text type="secondary" style={{ fontSize: 12, display: 'block' }}>
-                            Last opened: {new Date(item.lastOpened).toLocaleString()}
-                          </Typography.Text>
-                        ) : null}
-                      </button>
-                    ))}
-                  </Space>
-                ) : (
-                  <Empty description="No recent repositories yet." />
-                )}
+                    <div className={styles.emptyRecent}>
+                      No recent repositories. Create or open a repository to get started.
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>
-        </Card>
-          </div>
-        }
-      />
+        ) : (
+          /* ── CREATE FORM ── */
+          <div className={styles.createFormPanel}>
+            <div className={styles.createFormInner}>
+              <div className={styles.createFormHeader}>
+                <div className={styles.createFormIconWrap}>
+                  <AppstoreOutlined />
+                </div>
+                <div>
+                  <h2 className={styles.createFormTitle}>New Repository</h2>
+                  <p className={styles.createFormHint}>
+                    Create a repository to store architecture models, views,
+                    and relationships for your organization.
+                  </p>
+                </div>
+              </div>
+              <div className={styles.createFormDivider} />
+              <Form
+                form={form}
+                layout="vertical"
+                size="middle"
+                requiredMark={false}
+                initialValues={{
+                  architectureScope: 'Enterprise',
+                  referenceFramework: 'Custom',
+                  governanceMode: 'Strict',
+                  lifecycleCoverage: 'Both',
+                  timeHorizon: '1–3 years',
+                }}
+                onValuesChange={() => {
+                  const v = form.getFieldsValue();
+                  setCreateFormReady(
+                    Boolean(v.repositoryName?.trim()) && Boolean(v.organizationName?.trim()),
+                  );
+                }}
+                onFinish={(values) => {
+                  const res = createNewRepository({
+                    ...values,
+                  });
+                  if (!res.ok) {
+                    message.error(res.error);
+                    return;
+                  }
 
-      <Modal
-        title="Custom framework setup"
-        open={customSeedModalOpen}
-        onCancel={() => setCustomSeedModalOpen(false)}
-        footer={[
-          <Button
-            key="blank"
-            onClick={() => {
-              setCustomFrameworkConfig({ custom: { enabledObjectTypes: [], enabledRelationshipTypes: [] } });
-              form.setFieldsValue({ referenceFramework: 'Custom' });
-              lastFrameworkRef.current = 'Custom';
-              setCustomSeedModalOpen(false);
-            }}
-          >
-            Blank
-          </Button>,
-          <Button
-            key="core"
-            type="primary"
-            onClick={() => {
-              setCustomFrameworkConfig({
-                custom: {
-                  enabledObjectTypes: CUSTOM_CORE_EA_SEED.enabledObjectTypes,
-                  enabledRelationshipTypes: CUSTOM_CORE_EA_SEED.enabledRelationshipTypes,
-                },
-              });
-              form.setFieldsValue({ referenceFramework: 'Custom' });
-              lastFrameworkRef.current = 'Custom';
-              setCustomSeedModalOpen(false);
-            }}
-          >
-            Core EA types
-          </Button>,
-        ]}
-      >
-        <Typography.Text>Start from blank or start with core EA types?</Typography.Text>
-      </Modal>
+                  try {
+                    const intent =
+                      values.architectureScope === 'Domain'
+                        ? 'business.capabilities'
+                        : values.architectureScope === 'Programme'
+                          ? 'implmig.programmes'
+                          : 'business.enterprises';
+                    localStorage.setItem('ea.startup.open.v1', intent);
+                  } catch {
+                    // Best-effort only.
+                  }
+
+                  void (async () => {
+                    try { await refreshProject(); } catch { /* ignore */ }
+
+                    try {
+                      await createProject({
+                        name: values.repositoryName,
+                        description: `${values.organizationName} EA repository`,
+                      });
+                    } catch { /* ignore */ }
+
+                    const repositoryId = uuid();
+                    updateProjectStatus({
+                      repositoryId,
+                      repositoryName: values.repositoryName,
+                      dirty: false,
+                    });
+
+                    const payload = await buildProjectPayload();
+                    if (!payload) {
+                      message.error('Failed to create repository data.');
+                      return;
+                    }
+
+                    if (!window.eaDesktop?.saveManagedRepository) {
+                      message.info('Managed repositories are available in the desktop app.');
+                      return;
+                    }
+
+                    const saveRes = await window.eaDesktop.saveManagedRepository({
+                      payload,
+                      repositoryId,
+                    });
+
+                    if (!saveRes.ok) {
+                      message.error(saveRes.error);
+                      return;
+                    }
+
+                    const description = values.organizationName
+                      ? `${values.organizationName} EA repository`
+                      : null;
+                    updateRecentProjects({ id: saveRes.repositoryId ?? repositoryId, name: values.repositoryName, description });
+                    history.push('/workspace');
+                  })();
+
+                  message.success('Repository created.');
+                }}
+              >
+                {/* ── Section 1: Basic Information ── */}
+                <div className={styles.createFormSectionLabel}>Basic Information</div>
+                <Form.Item
+                  name="repositoryName"
+                  rules={[{ required: true, whitespace: true, message: '' }]}
+                >
+                  <Input placeholder="Repository name" autoFocus />
+                </Form.Item>
+                <Form.Item
+                  name="organizationName"
+                  rules={[{ required: true, whitespace: true, message: '' }]}
+                >
+                  <Input placeholder="Organization name" />
+                </Form.Item>
+
+                {/* ── Section 2: Architecture Defaults ── */}
+                <div className={styles.createFormSectionDivider} />
+                <div className={styles.createFormSectionLabel}>Architecture Defaults</div>
+                <div className={styles.createFormFieldRow}>
+                  <Form.Item label="Scope" name="architectureScope" className={styles.createFormFieldHalf}>
+                    <DarkDropdown options={ARCHITECTURE_SCOPES.map((v) => ({ value: v, label: v }))} />
+                  </Form.Item>
+                  <Form.Item label="Framework" name="referenceFramework" className={styles.createFormFieldHalf}>
+                    <DarkDropdown options={REFERENCE_FRAMEWORKS.map((v) => ({ value: v, label: v }))} />
+                  </Form.Item>
+                </div>
+
+                {/* ── Section 3: Governance & Planning ── */}
+                <div className={styles.createFormSectionDivider} />
+                <div className={styles.createFormSectionLabel}>Governance & Planning</div>
+                <Form.Item label="Governance" name="governanceMode">
+                  <Segmented
+                    options={GOVERNANCE_MODES}
+                    className={styles.createFormSegmented}
+                  />
+                </Form.Item>
+                <div className={styles.createFormFieldRow}>
+                  <Form.Item label="Lifecycle" name="lifecycleCoverage" className={styles.createFormFieldHalf}>
+                    <DarkDropdown options={LIFECYCLE_COVERAGE_OPTIONS.map((v) => ({ value: v, label: v }))} />
+                  </Form.Item>
+                  <Form.Item label="Horizon" name="timeHorizon" className={styles.createFormFieldHalf}>
+                    <DarkDropdown options={TIME_HORIZONS.map((v) => ({ value: v, label: v }))} />
+                  </Form.Item>
+                </div>
+                <div className={styles.createFormActions}>
+                  <button
+                    type="button"
+                    className={styles.createFormBackBtn}
+                    onClick={() => { setMode('home'); setCreateFormReady(false); }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className={`${styles.createFormSubmitBtn} ${createFormReady ? styles.createFormSubmitReady : ''}`}
+                    disabled={!createFormReady}
+                  >
+                    Create Repository
+                  </button>
+                </div>
+              </Form>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 };

@@ -1,11 +1,12 @@
 ﻿import React from 'react';
-import { Button, Form, Input, Space, Typography, message } from 'antd';
+import { Button, Form, Input, Space, Typography } from 'antd';
 import { useModel } from '@umijs/max';
 import { ViewStore } from '@/diagram-studio/view-runtime/ViewStore';
 import { ViewpointRegistry } from '@/diagram-studio/viewpoints/ViewpointRegistry';
 import { resolveViewScope } from '@/diagram-studio/viewpoints/resolveViewScope';
 import { useEaRepository } from '@/ea/EaRepositoryContext';
 import { useIdeShell } from './index';
+import { message } from '@/ea/eaConsole';
 
 export type ObjectTableTabProps = {
   id: string;

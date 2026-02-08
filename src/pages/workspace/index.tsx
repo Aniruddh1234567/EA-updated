@@ -1,6 +1,6 @@
 import React from 'react';
 
-import { Card, Empty, Space, Typography, Button, message, Upload, Alert, Table } from 'antd';
+import { Card, Empty, Space, Typography, Button, Upload, Alert, Table } from 'antd';
 
 import { useEaProject } from '@/ea/EaProjectContext';
 import { addElement } from '../../../backend/repository/RepositoryStore';
@@ -9,6 +9,7 @@ import { getRepository } from '../../../backend/repository/RepositoryStore';
 import type { Capability } from '../../../backend/repository/Capability';
 import type { Application } from '../../../backend/repository/Application';
 import type { ApplicationDependencyRelationship } from '../../../backend/repository/ApplicationDependencyRelationship';
+import { message } from '@/ea/eaConsole';
 
 const WorkspacePage: React.FC = () => {
   const { project } = useEaProject();

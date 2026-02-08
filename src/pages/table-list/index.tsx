@@ -10,11 +10,12 @@ import {
   ProTable,
 } from '@ant-design/pro-components';
 import { FormattedMessage, useIntl, useRequest } from '@umijs/max';
-import { Button, Drawer, Input, message } from 'antd';
+import { Button, Drawer, Input } from 'antd';
 import React, { useCallback, useRef, useState } from 'react';
 import { removeRule, rule } from '@/services/ant-design-pro/api';
 import CreateForm from './components/CreateForm';
 import UpdateForm from './components/UpdateForm';
+import { message } from '@/ea/eaConsole';
 
 const TableList: React.FC = () => {
   const actionRef = useRef<ActionType | null>(null);

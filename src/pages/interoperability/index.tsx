@@ -20,7 +20,6 @@ import {
   Tabs,
   Typography,
   Upload,
-  message,
 } from 'antd';
 import type { UploadFile } from 'antd/es/upload/interface';
 import * as XLSX from 'xlsx';
@@ -37,6 +36,7 @@ import type {
 import type { ExportScope } from '../../../backend/interoperability/ExportScope';
 
 import { executeCsvImport, exportCsv, validateCsvImport } from '@/services/ea/interoperability';
+import { message } from '@/ea/eaConsole';
 
 type SourceType = 'CSV' | 'ArchiMate' | 'ToolSpecific';
 

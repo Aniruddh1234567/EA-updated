@@ -15,6 +15,7 @@ export type DesignWorkspaceLayoutNode = {
   elementType: ObjectType;
   x: number;
   y: number;
+  viewInstance?: boolean;
 };
 
 export type DesignWorkspaceLayoutEdge = {
@@ -122,7 +123,7 @@ const normalizeWorkspaces = (items: DesignWorkspace[]): DesignWorkspace[] =>
         ...w,
         status: (w.status as DesignWorkspaceStatus) ?? 'DRAFT',
         createdBy: (w.createdBy ?? 'unknown') as string,
-        mode: (w as any)?.mode ?? 'STANDARD',
+        mode: (w as any)?.mode ?? 'ITERATIVE',
         stagedElements,
         stagedRelationships,
         layout: { nodes: layoutNodes, edges: layoutEdges },

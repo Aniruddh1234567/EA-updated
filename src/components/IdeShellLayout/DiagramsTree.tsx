@@ -1,9 +1,11 @@
 import {
   ApartmentOutlined,
+  DeleteOutlined,
+  EditOutlined,
   FileAddOutlined,
   FileTextOutlined,
 } from '@ant-design/icons';
-import { Tree } from 'antd';
+import { Button, Input, Modal, Tree } from 'antd';
 import type { DataNode } from 'antd/es/tree';
 import React from 'react';
 import { useLocation } from '@umijs/max';
@@ -11,6 +13,7 @@ import { useIdeShell } from './index';
 import styles from './style.module.less';
 import { useIdeSelection } from '@/ide/IdeSelectionContext';
 import { useEaRepository } from '@/ea/EaRepositoryContext';
+import { message } from '@/ea/eaConsole';
 
 import { ViewStore } from '@/diagram-studio/view-runtime/ViewStore';
 import { ViewpointRegistry } from '@/diagram-studio/viewpoints/ViewpointRegistry';
@@ -18,9 +21,10 @@ import type { ViewInstance } from '@/diagram-studio/viewpoints/ViewInstance';
 
 const buildTree = (
   views: ViewInstance[],
-  opts?: { showCreate?: boolean },
+  opts?: { showCreate?: boolean; onRename?: (view: ViewInstance) => void; onDelete?: (view: ViewInstance) => void },
 ): DataNode[] => {
-  const sorted = [...views].sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
+  const savedOnly = views.filter((v) => v.status === 'SAVED');
+  const sorted = [...savedOnly].sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
 
   const savedViewNodes: DataNode[] =
     sorted.length === 0
@@ -39,8 +43,31 @@ const buildTree = (
           return {
             key: `view:${v.id}`,
             title: (
-              <span>
-                {v.name} <span style={{ color: '#8c8c8c' }}>({viewpointLabel})</span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                <span>
+                  {v.name} <span style={{ color: '#8c8c8c' }}>({viewpointLabel})</span>
+                </span>
+                <span style={{ display: 'inline-flex', gap: 4 }}>
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<EditOutlined />}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      opts?.onRename?.(v);
+                    }}
+                  />
+                  <Button
+                    type="text"
+                    size="small"
+                    danger
+                    icon={<DeleteOutlined />}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      opts?.onDelete?.(v);
+                    }}
+                  />
+                </span>
               </span>
             ),
             icon: <FileTextOutlined />,
@@ -85,28 +112,83 @@ const DiagramsTree: React.FC = () => {
   const { metadata } = useEaRepository();
   const location = useLocation();
 
+  const handleRenameView = React.useCallback((view: ViewInstance) => {
+    let nextName = view.name;
+    Modal.confirm({
+      title: 'Rename view',
+      okText: 'Rename',
+      cancelText: 'Cancel',
+      content: (
+        <Input
+          defaultValue={view.name}
+          onChange={(e) => {
+            nextName = e.target.value;
+          }}
+          placeholder="View name"
+        />
+      ),
+      onOk: () => {
+        const name = (nextName ?? '').trim();
+        if (!name) {
+          message.error('Name is required.');
+          return Promise.reject();
+        }
+        ViewStore.update(view.id, (current) => ({ ...current, name }));
+        try {
+          window.dispatchEvent(new Event('ea:viewsChanged'));
+        } catch {
+          // Best-effort only.
+        }
+        message.success('View renamed.');
+      },
+    });
+  }, []);
+
+  const handleDeleteView = React.useCallback((view: ViewInstance) => {
+    Modal.confirm({
+      title: 'Delete view?',
+      content: 'Deleting a view removes only the view definition. Repository content remains unchanged.',
+      okText: 'Delete',
+      okButtonProps: { danger: true },
+      cancelText: 'Cancel',
+      onOk: () => {
+        const removed = ViewStore.remove(view.id);
+        if (!removed) {
+          message.error('Delete failed. View not found.');
+          return;
+        }
+        try {
+          window.dispatchEvent(new Event('ea:viewsChanged'));
+        } catch {
+          // Best-effort only.
+        }
+        message.success('View deleted.');
+      },
+    });
+  }, []);
+
   const [treeData, setTreeData] = React.useState<DataNode[]>(() => {
     try {
       const views = ViewStore.list();
-      return buildTree(views, { showCreate: true });
+      return buildTree(views, { showCreate: true, onRename: handleRenameView, onDelete: handleDeleteView });
     } catch {
-      return buildTree([], { showCreate: true });
+      return buildTree([], { showCreate: true, onRename: handleRenameView, onDelete: handleDeleteView });
     }
   });
 
   React.useEffect(() => {
     const refresh = () => {
       try {
-        setTreeData(buildTree(ViewStore.list(), { showCreate: true }));
+        setTreeData(buildTree(ViewStore.list(), { showCreate: true, onRename: handleRenameView, onDelete: handleDeleteView }));
       } catch {
-        setTreeData(buildTree([], { showCreate: true }));
+        setTreeData(buildTree([], { showCreate: true, onRename: handleRenameView, onDelete: handleDeleteView }));
       }
     };
 
     refresh();
     window.addEventListener('ea:viewsChanged', refresh);
     return () => window.removeEventListener('ea:viewsChanged', refresh);
-  }, [metadata?.updatedAt]);
+  }, [handleDeleteView, handleRenameView, metadata?.updatedAt]);
 
   const activeViewId = React.useMemo(() => {
     const path = location?.pathname ?? '';

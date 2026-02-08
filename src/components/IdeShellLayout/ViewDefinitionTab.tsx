@@ -1,5 +1,5 @@
 import { ProCard } from '@ant-design/pro-components';
-import { Alert, Button, Checkbox, Collapse, Descriptions, Radio, Space, Tag, Tooltip, Typography, message } from 'antd';
+import { Alert, Button, Checkbox, Collapse, Descriptions, Radio, Space, Tag, Tooltip, Typography } from 'antd';
 import cytoscape, { type Core } from 'cytoscape';
 import React from 'react';
 
@@ -12,6 +12,7 @@ import ArchitectureReviewPanel from '@/components/ArchitectureReviewPanel';
 import { useEaRepository } from '@/ea/EaRepositoryContext';
 import { getTimeHorizonWindow } from '@/repository/timeHorizonPolicy';
 import { useIdeShell } from './index';
+import { message } from '@/ea/eaConsole';
 import { ViewpointRegistry } from '@/diagram-studio/viewpoints/ViewpointRegistry';
 import { ViewLayoutStore } from '@/diagram-studio/view-runtime/ViewLayoutStore';
 

@@ -1,0 +1,62 @@
+{
+  "version": "3.2.1",
+  "source": "Archimate-PlantUML Archimate.puml",
+  "relationships": [
+    {
+      "key": "access",
+      "name": "Access"
+    },
+    {
+      "key": "access-r",
+      "name": "Access r"
+    },
+    {
+      "key": "access-rw",
+      "name": "Access rw"
+    },
+    {
+      "key": "access-w",
+      "name": "Access w"
+    },
+    {
+      "key": "aggregation",
+      "name": "Aggregation"
+    },
+    {
+      "key": "assignment",
+      "name": "Assignment"
+    },
+    {
+      "key": "association",
+      "name": "Association"
+    },
+    {
+      "key": "composition",
+      "name": "Composition"
+    },
+    {
+      "key": "flow",
+      "name": "Flow"
+    },
+    {
+      "key": "influence",
+      "name": "Influence"
+    },
+    {
+      "key": "realization",
+      "name": "Realization"
+    },
+    {
+      "key": "serving",
+      "name": "Serving"
+    },
+    {
+      "key": "specialization",
+      "name": "Specialization"
+    },
+    {
+      "key": "triggering",
+      "name": "Triggering"
+    }
+  ]
+}

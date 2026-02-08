@@ -1,8 +1,9 @@
-import { Card, Checkbox, Divider, Space, Typography, message } from 'antd';
+import { Card, Checkbox, Divider, Space, Typography } from 'antd';
 import React from 'react';
 import { useEaRepository } from '@/ea/EaRepositoryContext';
 import { OBJECT_TYPE_DEFINITIONS, type ObjectType } from '@/pages/dependency-view/utils/eaMetaModel';
 import { getCustomMetaModelConfig } from '@/repository/customFrameworkConfig';
+import { message } from '@/ea/eaConsole';
 
 const isSoftDeleted = (attributes: Record<string, unknown> | null | undefined) => Boolean((attributes as any)?._deleted === true);
 

@@ -2,7 +2,7 @@ import React from 'react';
 import { useModel } from '@umijs/max';
 
 import { ProCard } from '@ant-design/pro-components';
-import { Alert, Button, Divider, Empty, Form, Input, Modal, Select, Space, Spin, Statistic, Table, Tag, Typography, message } from 'antd';
+import { Alert, Button, Divider, Empty, Form, Input, Modal, Select, Space, Spin, Statistic, Table, Tag, Typography } from 'antd';
 
 import type { AssuranceFinding, ArchitectureAssuranceReport } from '../../../backend/assurance/ArchitectureAssurance';
 import type { AssuranceSeverity } from '../../../backend/assurance/AssurancePolicy';
@@ -18,6 +18,7 @@ import { createRoadmap } from '../../../backend/roadmap/RoadmapStore';
 
 import { useIdeShell } from '@/components/IdeShellLayout';
 import { useEaRepository } from '@/ea/EaRepositoryContext';
+import { message } from '@/ea/eaConsole';
 import { useEaProject } from '@/ea/EaProjectContext';
 import { hasRepositoryPermission, type RepositoryRole } from '@/repository/accessControl';
 import { buildGovernanceDebt } from '@/ea/governanceValidation';

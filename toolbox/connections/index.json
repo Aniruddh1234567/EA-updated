@@ -1,0 +1,18 @@
+{
+  "items": [
+    "access",
+    "access-r",
+    "access-rw",
+    "access-w",
+    "aggregation",
+    "assignment",
+    "association",
+    "composition",
+    "flow",
+    "influence",
+    "realization",
+    "serving",
+    "specialization",
+    "triggering"
+  ]
+}
